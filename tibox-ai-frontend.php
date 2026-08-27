@@ -4,6 +4,7 @@
  * Plugin URI: https://github.com/wladimick/plugin-wp-web-tiboxCL
  * Description: Frontend liviano para páginas de Tibox diseñadas con IA, manteniendo WordPress como backend y Rank Math/GTM mediante los hooks estándar.
  * Version: 0.1.0
+ * Requires PHP: 8.0
  * Author: Tibox
  * Text Domain: tibox-ai-frontend
  */
