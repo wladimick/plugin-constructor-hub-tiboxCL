@@ -1,51 +1,14 @@
-# Arquitectura — Tibox AI Frontend
+# Documento histórico — arquitectura MVP
 
-## Principio
+Este archivo se conserva temporalmente para no romper enlaces de la etapa inicial **Tibox AI Frontend**.
 
-WordPress sigue resolviendo la URL, permisos, SEO, REST, medios, administración y datos. El plugin evita el template del tema solo en las páginas habilitadas.
+Desde el 2026-08-28 la fuente de verdad arquitectónica es:
 
-```text
-Request /inicio-con-ia/
-        │
-        ▼
-WordPress resuelve Page + Rank Math
-        │
-        ▼
-Tibox AI Frontend detecta meta enabled=1
-        │
-        ├─ wp_head()  → SEO / canonical / OG / snippets compatibles
-        ├─ header liviano
-        ├─ template home-ai
-        ├─ formulario → /wp-json/tibox/v1/lead
-        ├─ wp_footer() → mega menú / GTM actual / hooks compatibles
-        │
-        ▼
-HTML liviano sin template Elementor
-```
+- [`ARCHITECTURE.md`](ARCHITECTURE.md)
+- [`START-HERE-AI.md`](START-HERE-AI.md)
+- [`DEVELOPMENT-PROTOCOL.md`](DEVELOPMENT-PROTOCOL.md)
+- [`CHANGELOG.md`](CHANGELOG.md)
 
-## Por qué no usar documento HTML completamente aislado
+No agregar nuevas decisiones a este archivo.
 
-Un HTML completo servido antes de `wp_head()` puede ser muy rápido, pero obliga a reconstruir manualmente Rank Math, canonical, Open Graph, GTM y otros hooks. Para esta etapa se prefiere un shell limpio que conserve los hooks de WordPress y descargue solo los assets pesados conocidos.
-
-## Compatibilidad con el menú actual
-
-El mega menú WPCode actual escucha un opener con atributo `data-open-tibox-mega-menu`. El header del plugin utiliza ese atributo, por lo que se puede eliminar el header de Elementor en la página IA sin perder el menú de servicios.
-
-## Formulario
-
-La plantilla usa el contrato del endpoint existente:
-
-- `name`
-- `email`
-- `phone`
-- `company`
-- `rut`
-- `area`
-- `users`
-- `message`
-- `privacy`
-- `website` (honeypot)
-- contexto de landing
-- UTM / IDs de Ads
-
-El evento `form_submit` se publica a `dataLayer` únicamente después de que el servidor confirma `lead_created=true`.
+La arquitectura actual corresponde a **Constructor HUB Tibox**, un constructor frontend progresivo para WordPress con modos Legacy, Híbrido y HUB, independiente del theme y de Elementor en su core.
