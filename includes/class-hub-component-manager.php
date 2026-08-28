@@ -126,7 +126,7 @@ final class HUB_Tibox_Component_Manager
         <p style="color:#646970;">
             Variables disponibles inicialmente: <code>{{SITE_URL}}</code>, <code>{{HOME_URL}}</code>,
             <code>{{SITE_NAME}}</code>, <code>{{CURRENT_YEAR}}</code>, <code>{{CUSTOM_LOGO}}</code>,
-            <code>{{MENU_PRIMARY}}</code> y <code>{{MENU_FOOTER}}</code>.
+            <code>{{CUSTOM_LOGO_URL}}</code>, <code>{{MENU_PRIMARY}}</code> y <code>{{MENU_FOOTER}}</code>.
         </p>
         <p>
             <strong>CSS</strong><br>
@@ -221,7 +221,7 @@ final class HUB_Tibox_Component_Manager
             <p>Etapa actual: Header/Footer HUB en modo híbrido para páginas WordPress existentes.</p>
 
             <div class="notice notice-warning inline">
-                <p><strong>Transición segura:</strong> no actives el modo híbrido global hasta validar Header y Footer en una página de prueba.</p>
+                <p><strong>Transición segura:</strong> valida primero en una página de prueba. Puedes activar solo Header, solo Footer o ambos.</p>
             </div>
 
             <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
@@ -230,29 +230,31 @@ final class HUB_Tibox_Component_Manager
 
                 <table class="form-table" role="presentation">
                     <tr>
-                        <th scope="row"><label for="hub-active-header">Header activo</label></th>
+                        <th scope="row"><label for="hub-active-header">Header HUB</label></th>
                         <td>
                             <select id="hub-active-header" name="hub_active_header">
-                                <option value="0">— Seleccionar —</option>
+                                <option value="0">— Mantener sin Header HUB —</option>
                                 <?php foreach ($headers as $component) : ?>
                                     <option value="<?php echo esc_attr((string) $component->ID); ?>" <?php selected($header, $component->ID); ?>>
                                         <?php echo esc_html($component->post_title); ?>
                                     </option>
                                 <?php endforeach; ?>
                             </select>
+                            <p class="description">Selecciona 0 para probar únicamente Footer HUB.</p>
                         </td>
                     </tr>
                     <tr>
-                        <th scope="row"><label for="hub-active-footer">Footer activo</label></th>
+                        <th scope="row"><label for="hub-active-footer">Footer HUB</label></th>
                         <td>
                             <select id="hub-active-footer" name="hub_active_footer">
-                                <option value="0">— Seleccionar —</option>
+                                <option value="0">— Mantener sin Footer HUB —</option>
                                 <?php foreach ($footers as $component) : ?>
                                     <option value="<?php echo esc_attr((string) $component->ID); ?>" <?php selected($footer, $component->ID); ?>>
                                         <?php echo esc_html($component->post_title); ?>
                                     </option>
                                 <?php endforeach; ?>
                             </select>
+                            <p class="description">Selecciona 0 para probar únicamente Header HUB.</p>
                         </td>
                     </tr>
                     <tr>
@@ -262,7 +264,7 @@ final class HUB_Tibox_Component_Manager
                                 <input type="checkbox" name="hub_hybrid_enabled" value="1" <?php checked($enabled); ?>>
                                 Activar renderer híbrido cuando el alcance coincida.
                             </label>
-                            <p class="description">Requiere Header y Footer publicados y seleccionados.</p>
+                            <p class="description">Requiere al menos un Header o Footer HUB publicado y seleccionado.</p>
                         </td>
                     </tr>
                     <tr>
@@ -403,7 +405,7 @@ final class HUB_Tibox_Component_Manager
     public function hybrid_is_configured(): bool
     {
         return $this->get_active_component_id('header') > 0
-            && $this->get_active_component_id('footer') > 0;
+            || $this->get_active_component_id('footer') > 0;
     }
 
     public function should_use_hybrid_for_page(int $page_id): bool
@@ -445,7 +447,9 @@ final class HUB_Tibox_Component_Manager
 
     private function replace_variables(string $html): string
     {
-        $logo = has_custom_logo() ? get_custom_logo() : esc_html(get_bloginfo('name'));
+        $logo_html = has_custom_logo() ? get_custom_logo() : esc_html(get_bloginfo('name'));
+        $logo_id = (int) get_theme_mod('custom_logo', 0);
+        $logo_url = $logo_id > 0 ? (string) wp_get_attachment_image_url($logo_id, 'full') : '';
 
         $primary_menu = wp_nav_menu([
             'theme_location' => 'primary',
@@ -462,11 +466,12 @@ final class HUB_Tibox_Component_Manager
         ]);
 
         $variables = [
-            '{{SITE_URL}}' => esc_url(home_url('/')),
+            '{{SITE_URL}}' => untrailingslashit(esc_url(home_url('/'))),
             '{{HOME_URL}}' => esc_url(home_url('/')),
             '{{SITE_NAME}}' => esc_html(get_bloginfo('name')),
             '{{CURRENT_YEAR}}' => esc_html(wp_date('Y')),
-            '{{CUSTOM_LOGO}}' => (string) $logo,
+            '{{CUSTOM_LOGO}}' => (string) $logo_html,
+            '{{CUSTOM_LOGO_URL}}' => esc_url($logo_url),
             '{{MENU_PRIMARY}}' => (string) $primary_menu,
             '{{MENU_FOOTER}}' => (string) $footer_menu,
         ];
