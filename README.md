@@ -1,94 +1,140 @@
-# Tibox AI Frontend
+# Constructor HUB Tibox
 
-Plugin de WordPress para construir y probar páginas frontend livianas diseñadas con IA, manteniendo WordPress como backend.
+Constructor frontend progresivo para WordPress desarrollado por Tibox.
 
-## Objetivo
+Su objetivo es permitir que sitios WordPress existentes migren gradualmente desde constructores visuales como Elementor hacia una capa frontend propia, liviana y generable con IA, **sin perder WordPress como backend** y sin exigir un cambio inmediato de theme.
 
-Permitir que páginas concretas de `tibox.cl` se rendericen sin depender del template de Hello Elementor ni del runtime de Elementor, sin reemplazar todavía las páginas actuales.
+Repositorio: `wladimick/plugin-constructor-hub-tiboxCL`
 
-El enfoque es reversible:
+## Leer primero
 
-1. La URL sigue siendo una **Página normal de WordPress**.
-2. Rank Math continúa administrando title, description, canonical, Open Graph y robots.
-3. El plugin reemplaza únicamente el template frontend de las páginas marcadas como **Tibox AI Frontend**.
-4. `wp_head()`, `wp_body_open()` y `wp_footer()` se mantienen para conservar compatibilidad con SEO, GTM y snippets globales.
-5. En modo agresivo se descargan assets conocidos de Elementor, Hello Elementor, Essential Addons, Prime Slider, Swiper, jQuery, Backbone, Marionette y otros componentes que no necesita la plantilla IA.
+Toda persona o IA que vaya a trabajar en este repositorio debe comenzar por:
 
-## MVP incluido
+1. [`docs/START-HERE-AI.md`](docs/START-HERE-AI.md)
+2. [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+3. [`docs/DEVELOPMENT-PROTOCOL.md`](docs/DEVELOPMENT-PROTOCOL.md)
+4. [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
+5. [`docs/ROADMAP.md`](docs/ROADMAP.md)
 
-- Plantilla `home-ai` para probar una nueva página de inicio.
-- Header liviano propio.
-- Compatibilidad con el mega menú actual de WPCode mediante `data-open-tibox-mega-menu`.
-- Formulario nativo conectado a `POST /wp-json/tibox/v1/lead`.
-- Captura de UTM, `gclid`, `gbraid` y `wbraid`.
-- Evento `dataLayer` `form_submit` solo cuando el endpoint confirma `lead_created`.
-- Responsive y animaciones sin librerías externas.
-- Lazy load de slides secundarios.
-- Metabox por página para activar/desactivar el frontend IA.
+La documentación es parte del producto. Un cambio de código que altere comportamiento, arquitectura, compatibilidad o flujo de trabajo debe quedar documentado.
 
-## Dependencias actuales durante la etapa 1
+## Problema que resuelve
 
-Mientras migramos WPCode al plugin, deben continuar activos estos snippets:
+Tibox y Prodata utilizan actualmente WordPress + Elementor. No es viable reemplazar todo el frontend de una sola vez ni cambiar inmediatamente el theme existente.
 
-- GTM: snippets `16005` y `16006` (`GTM-WQVDMTC`).
-- Mega menú: `20042`, `20040` y `20044`.
-- Endpoint de leads: `19963`.
-- Bridge WebOps: `20019` si se quiere mantener la integración de marketing.
+Constructor HUB Tibox permite una transición por capas:
 
-Rank Math debe seguir activo.
+```text
+WordPress
+├── contenido
+├── medios
+├── usuarios
+├── SEO / Rank Math
+├── formularios / endpoints
+├── analítica / GTM
+└── Constructor HUB Tibox
+    ├── Header HUB
+    ├── Footer HUB
+    ├── bloques HUB
+    ├── páginas híbridas
+    ├── páginas HUB completas
+    └── optimización de assets
+```
 
-## Instalación
+## Modos objetivo
 
-1. Descargar o clonar el repositorio.
-2. Comprimir la carpeta del plugin como ZIP.
-3. WordPress → Plugins → Añadir plugin → Subir plugin.
-4. Activar **Tibox AI Frontend**.
-5. Editar la página de prueba, por ejemplo `/inicio-con-ia/`.
-6. En el metabox **Tibox AI Frontend**:
-   - activar `Usar frontend liviano Tibox AI`;
-   - seleccionar `Inicio IA — MVP`;
-   - usar `Agresiva (sin Elementor/jQuery)` para la prueba de performance.
-7. Actualizar la página y revisar el frontend.
+### Legacy
 
-## SEO durante la prueba
+Theme actual + Elementor continúan controlando la mayor parte de la página. HUB puede incorporar componentes puntuales.
 
-No conviene tener dos páginas indexables con prácticamente el mismo contenido.
+### Híbrido
 
-Para `/inicio-con-ia/`, mientras sea una prueba:
+Header, Footer y determinados bloques son HUB. El contenido restante puede seguir viniendo de Elementor/WordPress.
 
-- mantener title/description representativos;
-- configurar **noindex** en Rank Math;
-- no apuntar el canonical a `/` mientras la prueba siga siendo una URL independiente.
+### HUB
 
-Cuando el nuevo frontend sustituya oficialmente el home, se puede aplicar el diseño a la página configurada como portada y mantener allí el SEO definitivo de `https://www.tibox.cl/`.
+La página usa templates y componentes propios HTML/CSS/JS. Elementor puede dejar de cargarse en esa URL.
 
-## Qué NO hace todavía
+A futuro existirá un **HUB Tibox Theme opcional**, pero el plugin no debe depender de él. La misma instalación debe poder funcionar con Hello Elementor, themes existentes de clientes y un theme HUB futuro.
 
-- No desactiva automáticamente snippets de WPCode.
-- No migra todavía el endpoint de leads al plugin.
-- No migra todavía GTM al plugin para evitar duplicarlo con WPCode.
-- No incluye un editor visual.
-- No cambia la portada actual ni elimina Elementor de otras páginas.
+## Sitios iniciales
 
-## Roadmap sugerido
+- `tibox.cl`: transición desde WordPress + Hello Elementor + Elementor.
+- `prodata.cl`: transición desde WordPress + Elementor sin cambiar inicialmente su theme.
 
-### Fase 1 — Home de prueba
+El núcleo del plugin debe ser reutilizable. Los comportamientos específicos de cada sitio deben resolverse mediante configuración/adaptadores y nunca mezclarse con el core genérico.
 
-- Validar UI/UX.
-- Verificar Rank Math, canonical, OG y robots.
-- Verificar GTM/Google Ads.
-- Probar formulario real y llegada a WordPress/WebOps.
-- Comparar Lighthouse/PageSpeed con el home actual.
+## Relación con Cloud-tibox
 
-### Fase 2 — Consolidación
+`wladimick/Cloud-tibox` es el antecedente directo de varias ideas de este proyecto:
 
-- Migrar mega menú, GTM y formulario desde WPCode al plugin.
-- Añadir panel de configuración global.
-- Añadir más plantillas IA: Nosotros, servicios, contacto, etc.
-- Añadir controles de assets por plantilla.
+- WordPress como backend.
+- HTML/CSS/JS generado con IA.
+- Design Packages.
+- variables dinámicas `{{...}}`.
+- preview y rollback.
+- separación entre contenido y presentación.
 
-### Fase 3 — Sustitución progresiva
+La diferencia es que Cloud-tibox nació con un theme propio. Constructor HUB Tibox debe poder instalarse primero **sin cambiar el theme existente** y permitir una migración progresiva.
 
-- Migrar páginas una a una.
-- Mantener redirecciones/canonicals existentes.
-- Desactivar Elementor únicamente cuando ya no queden páginas que lo necesiten.
+Ver [`docs/CLOUD-TIBOX-RELATION.md`](docs/CLOUD-TIBOX-RELATION.md).
+
+## Estado actual
+
+Versión de trabajo: `0.2.0`.
+
+El código existente proviene del MVP llamado históricamente **Tibox AI Frontend**. Desde v0.2.0 la identidad pública pasa a **Constructor HUB Tibox**.
+
+Por compatibilidad, algunos nombres internos (`TIBOX_AI_FRONTEND_*`, `TIBOX_AI_Frontend`, `home-ai`, etc.) todavía existen. No deben considerarse la arquitectura final. Su migración será gradual y documentada.
+
+El MVP actual permite:
+
+- reemplazar el template de una página seleccionada;
+- mantener `wp_head()`, `wp_body_open()` y `wp_footer()`;
+- conservar Rank Math/GTM/hooks globales;
+- probar una home HTML/CSS/JS propia;
+- descargar assets pesados de Elementor en modo agresivo;
+- usar un formulario nativo conectado al endpoint REST existente de Tibox.
+
+## Principios no negociables
+
+- WordPress sigue siendo backend.
+- La transición debe ser reversible.
+- No romper páginas Elementor existentes.
+- No obligar a cambiar el theme actual.
+- HTML semántico, CSS nativo y JavaScript nativo por defecto.
+- IA nunca debe recibir ni generar secretos/API keys.
+- Los assets de un componente deben cargar solo cuando se utilizan.
+- SEO y analítica se deben conservar durante la migración.
+- Cada cambio importante debe quedar registrado con fecha, rama y commit.
+- Una IA nueva debe poder comprender el proyecto leyendo `/docs` sin depender de conversaciones anteriores.
+
+## Flujo de desarrollo
+
+No desarrollar directamente en `main`.
+
+```text
+main
+└── feat/... | fix/... | refactor/... | docs/...
+      ├── implementación
+      ├── documentación
+      ├── QA
+      └── Pull Request
+```
+
+Antes de cerrar un cambio se debe actualizar `docs/CHANGELOG.md` con el contexto suficiente para reconstruir qué se hizo y por qué.
+
+## Roadmap resumido
+
+1. Formalizar Constructor HUB Tibox y documentación.
+2. Sistema global de Header/Footer reemplazables.
+3. Biblioteca de componentes.
+4. modos Legacy / Híbrido / HUB por página.
+5. Design System por sitio.
+6. Design Packages compatibles con Claude Design/ChatGPT.
+7. preview, versionado y rollback.
+8. adaptadores Tibox/Prodata.
+9. eliminación selectiva de assets Elementor.
+10. HUB Tibox Theme opcional para sitios 100% migrados.
+
+Ver [`docs/ROADMAP.md`](docs/ROADMAP.md) para el detalle.
