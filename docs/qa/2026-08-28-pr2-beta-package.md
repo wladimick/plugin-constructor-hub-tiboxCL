@@ -3,8 +3,8 @@
 Fecha: 2026-08-28
 Rama: `feat/hybrid-header-footer`
 PR: `#2`
-Commit de packaging: `20928b6a8eba5f99f6849de6a68c7ed2c3ec2a85`
-Workflow run: `33199638327`
+Commit de packaging compatible: `8993d3fd1308a20f5057c34073ce308b73fcf503`
+Workflow run: `33199765996`
 
 ## Resultado CI
 
@@ -14,22 +14,37 @@ Workflow run: `33199638327`
 - Build installable plugin ZIP: PASS
 - Upload artifact: PASS
 
-## Artifact
+## Artifact válido para actualizar instalaciones existentes
 
 Nombre: `constructor-hub-tibox-0.3.0-beta.1`
-Artifact ID: `9697207727`
+Artifact ID: `9697258159`
 Digest informado por GitHub Actions:
 
-`sha256:4877c7172f0e78d2b636e17bd962885cebc92fc8cf8b7b27e84a4cd3266af731`
+`sha256:7dd9c607f124b41160f215ec4f2869bd140c6b8ad704b6659707aa08d97d2c9d`
 
-El artifact contiene un ZIP instalable de WordPress con carpeta raíz:
+El artifact contiene un ZIP instalable de WordPress cuya carpeta raíz es deliberadamente:
 
-`constructor-hub-tibox/`
+`tibox-ai-frontend/`
+
+## Por qué se conserva ese nombre de carpeta
+
+Las primeras instalaciones del MVP usaron `tibox-ai-frontend/`. Aunque el nombre público del producto ahora es **Constructor HUB Tibox**, cambiar la carpeta del ZIP a `constructor-hub-tibox/` haría que WordPress pudiera interpretarlo como un segundo plugin instalado en paralelo.
+
+Eso podría cargar dos copias de las mismas clases PHP y provocar un error fatal.
+
+Por compatibilidad de upgrade, la carpeta histórica se conserva temporalmente. El renombre físico del plugin se hará mediante una migración explícita futura.
+
+## Artifact anterior descartado
+
+El build generado desde `20928b6a8eba5f99f6849de6a68c7ed2c3ec2a85` utilizaba carpeta raíz `constructor-hub-tibox/`.
+
+Ese artifact **no debe usarse para actualizar una instalación que ya tenga el MVP anterior**. Fue reemplazado por el build compatible generado desde `8993d3fd1308a20f5057c34073ce308b73fcf503`.
 
 ## Validación adicional del ZIP descargado
 
-Se inspeccionó la estructura del paquete generado y contiene:
+Se inspeccionó la estructura del paquete compatible y contiene:
 
+- carpeta raíz `tibox-ai-frontend/`;
 - bootstrap `tibox-ai-frontend.php` con versión `0.3.0-beta.1`;
 - Component Manager;
 - Hybrid Renderer;
@@ -38,7 +53,7 @@ Se inspeccionó la estructura del paquete generado y contiene:
 - documentación;
 - ejemplos Tibox 2026 Header/Footer.
 
-Además se volvió a ejecutar localmente sobre el contenido del ZIP:
+Además se volvió a ejecutar localmente sobre el contenido del ZIP descargado:
 
 - `php -l` sobre todos los archivos PHP: PASS;
 - `node --check` sobre todos los archivos JavaScript: PASS.
@@ -49,7 +64,7 @@ Este documento valida integridad/sintaxis/build. No sustituye el QA funcional en
 
 Pendiente en `tibox.cl`:
 
-1. actualizar/instalar beta;
+1. actualizar la instalación existente con el ZIP compatible;
 2. crear componentes Header/Footer;
 3. aplicar solo a `/inicio-con-ia/`;
 4. comprobar render Elementor central;
