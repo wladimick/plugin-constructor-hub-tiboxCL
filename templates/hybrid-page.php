@@ -18,7 +18,9 @@ $hub_components = HUB_Tibox_Component_Manager::instance();
 
 <a class="hub-skip-link screen-reader-text" href="#hub-main-content">Saltar al contenido</a>
 
-<?php $hub_components->render_active_component('header'); ?>
+<?php if ($hub_components->get_active_component_id('header') > 0) : ?>
+    <?php $hub_components->render_active_component('header'); ?>
+<?php endif; ?>
 
 <main id="hub-main-content" class="hub-main-content">
     <?php
@@ -29,7 +31,9 @@ $hub_components = HUB_Tibox_Component_Manager::instance();
     ?>
 </main>
 
-<?php $hub_components->render_active_component('footer'); ?>
+<?php if ($hub_components->get_active_component_id('footer') > 0) : ?>
+    <?php $hub_components->render_active_component('footer'); ?>
+<?php endif; ?>
 
 <?php wp_footer(); ?>
 </body>
