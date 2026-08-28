@@ -221,7 +221,7 @@ final class HUB_Tibox_Component_Manager
             <p>Etapa actual: Header/Footer HUB en modo híbrido para páginas WordPress existentes.</p>
 
             <div class="notice notice-warning inline">
-                <p><strong>Transición segura:</strong> valida primero en una página de prueba. Puedes activar solo Header, solo Footer o ambos.</p>
+                <p><strong>Transición segura:</strong> activa este renderer solo cuando ya tengas Header y Footer HUB listos. La sustitución de una sola región manteniendo la otra del theme se implementará mediante adaptadores Legacy en una fase posterior.</p>
             </div>
 
             <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
@@ -230,31 +230,29 @@ final class HUB_Tibox_Component_Manager
 
                 <table class="form-table" role="presentation">
                     <tr>
-                        <th scope="row"><label for="hub-active-header">Header HUB</label></th>
+                        <th scope="row"><label for="hub-active-header">Header activo</label></th>
                         <td>
                             <select id="hub-active-header" name="hub_active_header">
-                                <option value="0">— Mantener sin Header HUB —</option>
+                                <option value="0">— Seleccionar —</option>
                                 <?php foreach ($headers as $component) : ?>
                                     <option value="<?php echo esc_attr((string) $component->ID); ?>" <?php selected($header, $component->ID); ?>>
                                         <?php echo esc_html($component->post_title); ?>
                                     </option>
                                 <?php endforeach; ?>
                             </select>
-                            <p class="description">Selecciona 0 para probar únicamente Footer HUB.</p>
                         </td>
                     </tr>
                     <tr>
-                        <th scope="row"><label for="hub-active-footer">Footer HUB</label></th>
+                        <th scope="row"><label for="hub-active-footer">Footer activo</label></th>
                         <td>
                             <select id="hub-active-footer" name="hub_active_footer">
-                                <option value="0">— Mantener sin Footer HUB —</option>
+                                <option value="0">— Seleccionar —</option>
                                 <?php foreach ($footers as $component) : ?>
                                     <option value="<?php echo esc_attr((string) $component->ID); ?>" <?php selected($footer, $component->ID); ?>>
                                         <?php echo esc_html($component->post_title); ?>
                                     </option>
                                 <?php endforeach; ?>
                             </select>
-                            <p class="description">Selecciona 0 para probar únicamente Header HUB.</p>
                         </td>
                     </tr>
                     <tr>
@@ -264,7 +262,7 @@ final class HUB_Tibox_Component_Manager
                                 <input type="checkbox" name="hub_hybrid_enabled" value="1" <?php checked($enabled); ?>>
                                 Activar renderer híbrido cuando el alcance coincida.
                             </label>
-                            <p class="description">Requiere al menos un Header o Footer HUB publicado y seleccionado.</p>
+                            <p class="description">Requiere Header y Footer publicados y seleccionados.</p>
                         </td>
                     </tr>
                     <tr>
@@ -405,7 +403,7 @@ final class HUB_Tibox_Component_Manager
     public function hybrid_is_configured(): bool
     {
         return $this->get_active_component_id('header') > 0
-            || $this->get_active_component_id('footer') > 0;
+            && $this->get_active_component_id('footer') > 0;
     }
 
     public function should_use_hybrid_for_page(int $page_id): bool
