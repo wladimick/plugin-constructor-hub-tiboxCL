@@ -12,7 +12,8 @@
         "phpcompatibility/phpcompatibility-wp": "^2.1",
         "dealerdirect/phpcodesniffer-composer-installer": "^1.0",
         "phpstan/phpstan": "^2.1",
-        "szepeviktor/phpstan-wordpress": "^2.0"
+        "szepeviktor/phpstan-wordpress": "^2.0",
+        "php-stubs/wp-cli-stubs": "^2.10"
     },
     "config": {
         "allow-plugins": {

@@ -220,89 +220,6 @@ final class HUB_Tibox_Landing_Lead_Store
         return (int) $wpdb->insert_id;
     }
 
-    /**
-     * One-way copy from the historical WPCode table. The old table is left
-     * untouched. Re-running is safe because submission_id is unique.
-     *
-     * @return array{migrated:int,skipped:int,total:int}
-     */
-    public function migrate_legacy_leads(): array
-    {
-        $this->maybe_install_table();
-
-        if (!$this->legacy_table_exists()) {
-            return ['migrated' => 0, 'skipped' => 0, 'total' => 0];
-        }
-
-        global $wpdb;
-        $legacy = $this->legacy_table_name();
-        $rows = $wpdb->get_results("SELECT * FROM {$legacy} ORDER BY id ASC", ARRAY_A);
-        $rows = is_array($rows) ? $rows : [];
-
-        $migrated = 0;
-        $skipped = 0;
-
-        foreach ($rows as $row) {
-            $submission_id = sanitize_text_field((string) ($row['submission_id'] ?? ''));
-            if ($submission_id === '') {
-                $submission_id = 'legacy-' . absint($row['id'] ?? 0);
-            }
-
-            if ($this->find_by_submission_id($submission_id) > 0) {
-                $skipped++;
-                continue;
-            }
-
-            $legacy_landing_id = absint($row['landing_id'] ?? 0);
-            $hub_landing_id = $this->resolve_migrated_landing_id($legacy_landing_id);
-
-            $lead_id = $this->insert([
-                'legacy_id' => absint($row['id'] ?? 0),
-                'submission_id' => $submission_id,
-                'landing_id' => $hub_landing_id,
-                'legacy_landing_id' => $legacy_landing_id,
-                'form_id' => $row['form_id'] ?? '',
-                'source_key' => $row['source_key'] ?? 'legacy_wpcode',
-                'created_at' => $row['created_at'] ?? current_time('mysql'),
-                'name' => $row['name'] ?? '',
-                'email' => $row['email'] ?? '',
-                'phone' => $row['phone'] ?? '',
-                'company' => $row['company'] ?? '',
-                'rut' => $row['rut'] ?? '',
-                'area' => $row['area'] ?? '',
-                'users' => $row['users'] ?? '',
-                'message' => $row['message'] ?? '',
-                'privacy' => !empty($row['privacy']),
-                'landing_url' => $row['landing_url'] ?? '',
-                'landing_path' => $row['landing_path'] ?? '',
-                'page_title' => $row['page_title'] ?? '',
-                'utm_source' => $row['utm_source'] ?? '',
-                'utm_medium' => $row['utm_medium'] ?? '',
-                'utm_campaign' => $row['utm_campaign'] ?? '',
-                'utm_term' => $row['utm_term'] ?? '',
-                'utm_content' => $row['utm_content'] ?? '',
-                'gclid' => $row['gclid'] ?? '',
-                'gbraid' => $row['gbraid'] ?? '',
-                'wbraid' => $row['wbraid'] ?? '',
-            ]);
-
-            if ($lead_id > 0) {
-                $migrated++;
-            } else {
-                $skipped++;
-            }
-        }
-
-        update_option('hub_tibox_legacy_leads_last_migration', [
-            'at' => current_time('mysql'),
-            'migrated' => $migrated,
-            'skipped' => $skipped,
-            'total' => count($rows),
-        ], false);
-
-        return ['migrated' => $migrated, 'skipped' => $skipped, 'total' => count($rows)];
-    }
-
 
     /**
      * Rows for the admin listing and for exports.
@@ -432,9 +349,7 @@ final class HUB_Tibox_Landing_Lead_Store
         return (int) $wpdb->delete($this->table_name(), ['email' => $email], ['%s']);
     }
 
-    /**
-     * Marks a lead as exported to Google Ads so it is not counted twice.
-     */
+    /** Marks a lead as exported to Google Ads so it is never counted twice. */
     public function mark_conversion_exported(int $lead_id): void
     {
         global $wpdb;
@@ -494,14 +409,135 @@ final class HUB_Tibox_Landing_Lead_Store
         ));
     }
 
+    /**
+     * One-way copy from the historical WPCode table, in batches.
+     *
+     * The old table is left untouched. Re-running is safe because
+     * `submission_id` is unique, and the cursor means a timeout mid-way costs a
+     * retry rather than an unknown partial state.
+     *
+     * @return array{migrated:int,skipped:int,total:int,remaining:int}
+     */
+    public function migrate_legacy_leads(int $batch = 200): array
+    {
+        $this->maybe_install_table();
+
+        if (!$this->legacy_table_exists()) {
+            return ['migrated' => 0, 'skipped' => 0, 'total' => 0, 'remaining' => 0];
+        }
+
+        global $wpdb;
+        $legacy = $this->legacy_table_name();
+
+        $total = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$legacy}");
+        $cursor = (int) get_option('hub_tibox_lead_migration_cursor', 0);
+        $batch = max(1, min($batch, 1000));
+
+        $rows = $wpdb->get_results(
+            $wpdb->prepare("SELECT * FROM {$legacy} WHERE id > %d ORDER BY id ASC LIMIT %d", $cursor, $batch),
+            ARRAY_A
+        );
+        $rows = is_array($rows) ? $rows : [];
+
+        $migrated = 0;
+        $skipped = 0;
+
+        foreach ($rows as $row) {
+            $cursor = max($cursor, (int) ($row['id'] ?? 0));
+
+            $submission_id = sanitize_text_field((string) ($row['submission_id'] ?? ''));
+            if ($submission_id === '') {
+                $submission_id = 'legacy-' . absint($row['id'] ?? 0);
+            }
+
+            if ($this->find_by_submission_id($submission_id) > 0) {
+                $skipped++;
+                continue;
+            }
+
+            $legacy_landing_id = absint($row['landing_id'] ?? 0);
+
+            $lead_id = $this->insert([
+                'legacy_id' => absint($row['id'] ?? 0),
+                'submission_id' => $submission_id,
+                'landing_id' => $this->resolve_migrated_landing_id($legacy_landing_id),
+                'legacy_landing_id' => $legacy_landing_id,
+                'form_id' => $row['form_id'] ?? '',
+                'source_key' => $row['source_key'] ?? 'legacy_wpcode',
+                'created_at' => $row['created_at'] ?? current_time('mysql'),
+                'name' => $row['name'] ?? '',
+                'email' => $row['email'] ?? '',
+                'phone' => $row['phone'] ?? '',
+                'company' => $row['company'] ?? '',
+                'rut' => $row['rut'] ?? '',
+                'area' => $row['area'] ?? '',
+                'users' => $row['users'] ?? '',
+                'message' => $row['message'] ?? '',
+                'privacy' => !empty($row['privacy']),
+                // The historical table has no consent timestamp: the creation
+                // time is the closest honest approximation and is recorded as
+                // such rather than invented.
+                'consent_at' => $row['created_at'] ?? current_time('mysql'),
+                'landing_url' => $row['landing_url'] ?? '',
+                'landing_path' => $row['landing_path'] ?? '',
+                'page_title' => $row['page_title'] ?? '',
+                'utm_source' => $row['utm_source'] ?? '',
+                'utm_medium' => $row['utm_medium'] ?? '',
+                'utm_campaign' => $row['utm_campaign'] ?? '',
+                'utm_term' => $row['utm_term'] ?? '',
+                'utm_content' => $row['utm_content'] ?? '',
+                'gclid' => $row['gclid'] ?? '',
+                'gbraid' => $row['gbraid'] ?? '',
+                'wbraid' => $row['wbraid'] ?? '',
+            ]);
+
+            if ($lead_id > 0) {
+                $migrated++;
+                continue;
+            }
+
+            $skipped++;
+        }
+
+        update_option('hub_tibox_lead_migration_cursor', $cursor, false);
+
+        $remaining = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM {$legacy} WHERE id > %d",
+            $cursor
+        ));
+
+        update_option('hub_tibox_legacy_leads_last_migration', [
+            'at' => current_time('mysql'),
+            'migrated' => $migrated,
+            'skipped' => $skipped,
+            'total' => $total,
+            'remaining' => $remaining,
+        ], false);
+
+        return ['migrated' => $migrated, 'skipped' => $skipped, 'total' => $total, 'remaining' => $remaining];
+    }
+
+    public function pending_legacy_leads(): int
+    {
+        if (!$this->legacy_table_exists()) {
+            return 0;
+        }
+
+        global $wpdb;
+        $legacy = $this->legacy_table_name();
+        $cursor = (int) get_option('hub_tibox_lead_migration_cursor', 0);
+
+        return (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$legacy} WHERE id > %d", $cursor));
+    }
+
     private function resolve_migrated_landing_id(int $legacy_landing_id): int
     {
-        if ($legacy_landing_id <= 0 || !class_exists('HUB_Tibox_Landing_Manager')) {
+        if ($legacy_landing_id <= 0 || !class_exists('HUB_Tibox_Design')) {
             return 0;
         }
 
         $posts = get_posts([
-            'post_type' => HUB_Tibox_Landing_Manager::POST_TYPE,
+            'post_type' => HUB_Tibox_Design::POST_TYPE,
             'post_status' => 'any',
             'posts_per_page' => 1,
             'fields' => 'ids',

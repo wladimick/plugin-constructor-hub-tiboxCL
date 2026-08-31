@@ -40,6 +40,8 @@ require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-preview.php';
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-asset-compiler.php';
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-regions.php';
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-render.php';
+require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-asset-optimizer.php';
+require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-migration-map.php';
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-insertion.php';
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-design-system.php';
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-form-config.php';
@@ -69,7 +71,6 @@ require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-landing-zip-importer.ph
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-package.php';
 
 // Historical modules, kept for sites that have not been migrated yet.
-require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-tibox-ai-frontend.php';
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-component-manager.php';
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-hybrid-renderer.php';
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-landing-manager.php';
@@ -77,6 +78,7 @@ require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-landing-renderer.php';
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-legacy-migrator.php';
 
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-plugin.php';
+require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-cli.php';
 
 register_activation_hook(__FILE__, static function (): void {
     HUB_Tibox_Upgrade::instance()->install();

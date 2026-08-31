@@ -6,6 +6,64 @@ Formato requerido desde 2026-08-28: **fecha · rama · commit · objetivo · imp
 
 ---
 
+## 2026-08-31 — Fase 5: migración de Elementor y WPCode
+
+Rama: `feat/hub-v0.5-refundacion`.
+Estado: **implementado / QA WordPress pendiente**.
+
+### Objetivo
+
+Elementor no se retira por decisión, se retira por inventario. Esta fase aporta
+el inventario, un dequeue que se apoya en él, y una migración WPCode que no se
+cae con volúmenes reales ni cambia URLs sin que alguien lo pida.
+
+### Cambios
+
+- **Mapa de migración** (`Constructor HUB → Mapa de migración`): para cada
+  contenido, qué lo renderiza, si todavía necesita Elementor y qué componentes
+  HUB inserta. La detección usa el modo de edición guardado y el markup real, no
+  el nombre de los handles encolados.
+- **`HUB_Tibox_Asset_Optimizer`** sustituye al `strip_heavy_assets()` del MVP.
+  Desactivado por defecto; solo actúa donde Constructor HUB controla el
+  documento y el inventario dice que Elementor no hace falta; y nunca elimina un
+  handle del que dependa algo todavía encolado.
+- **Migración WPCode por lotes** con cursor persistido, tanto en el admin como
+  por línea de comandos. Un timeout cuesta un reintento, no un estado parcial
+  desconocido.
+- **Traspaso de URL explícito (ALTO-09)**: la landing migrada nace en borrador
+  con slug propio. Publicar la URL histórica es una acción por landing que
+  publica el diseño, retira el original y registra la redirección 301. Copiar
+  datos ya no puede generar contenido duplicado indexable.
+- **WP-CLI**: `wp hub migrate-wpcode`, `wp hub designs`, `wp hub purge-leads`.
+- La migración WPCode ahora escribe diseños `hub_design`, no el post type
+  histórico, e importa el package de cada landing a la carpeta de su versión.
+- Se elimina el MVP de página completa: `includes/class-tibox-ai-frontend.php`,
+  `pages/home-ai/`, `templates/ai-page.php` y `assets/css/ai-shell.css`. Con
+  ellos desaparecen el branding de Tibox y las URLs codificadas dentro del core
+  (BAJO-03), y el endpoint que apuntaba a WPCode deja de tener consumidores.
+  El alias REST `tibox/v1/lead` se mantiene servido por el plugin.
+
+### Archivos principales
+
+`includes/class-hub-migration-map.php`, `class-hub-asset-optimizer.php`,
+`class-hub-cli.php`, `class-hub-legacy-migrator.php`,
+`class-hub-landing-lead-store.php`.
+
+### Compatibilidad y riesgos
+
+- La optimización de assets sigue apagada tras actualizar: activarla es una
+  decisión por sitio y se revierte desmarcando una casilla.
+- El traspaso de URL cambia el slug del diseño al de la landing histórica.
+  Conviene hacerlo fuera del horario de campaña y verificar la URL final del
+  anuncio inmediatamente después.
+
+### QA
+
+PHPCS y PHPStan nivel 5 sin errores, ahora con los stubs de WP-CLI.
+Pendiente: migración real sobre una copia del WordPress de Tibox.
+
+---
+
 ## 2026-08-31 — Fase 4: Design Packages e IA
 
 Rama: `feat/hub-v0.5-refundacion`.

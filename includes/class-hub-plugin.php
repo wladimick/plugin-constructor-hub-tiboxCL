@@ -69,6 +69,8 @@ final class HUB_Tibox_Plugin
         HUB_Tibox_Insertion::instance();
         HUB_Tibox_Design_System::instance();
         HUB_Tibox_Package::instance();
+        HUB_Tibox_Asset_Optimizer::instance();
+        HUB_Tibox_Migration_Map::instance();
         HUB_Tibox_Elementor_Adapter::instance();
 
         if (is_admin()) {
@@ -84,7 +86,6 @@ final class HUB_Tibox_Plugin
      */
     private function boot_legacy(): void
     {
-        TIBOX_AI_Frontend::instance();
         HUB_Tibox_Component_Manager::instance();
         HUB_Tibox_Hybrid_Renderer::instance();
         HUB_Tibox_Landing_Manager::instance();

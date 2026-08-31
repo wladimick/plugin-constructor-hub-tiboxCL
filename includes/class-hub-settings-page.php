@@ -251,6 +251,21 @@ final class HUB_Tibox_Settings_Page
                         </td>
                     </tr>
                     <tr>
+                        <th scope="row">Optimización de assets</th>
+                        <td>
+                            <label>
+                                <input type="checkbox" name="hub_asset_optimizer" value="1" <?php checked(HUB_Tibox_Asset_Optimizer::is_enabled()); ?>>
+                                Descargar assets de Elementor en las URLs que ya no lo necesitan.
+                            </label>
+                            <p class="description">
+                                Solo actúa donde Constructor HUB controla el documento y el
+                                <a href="<?php echo esc_url(admin_url('admin.php?page=constructor-hub-map')); ?>">mapa de migración</a>
+                                indica que el contenido no depende de Elementor. Nunca elimina un handle del que
+                                dependa algo todavía encolado.
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
                         <th scope="row">Elementor</th>
                         <td>
                             <label>
@@ -302,6 +317,7 @@ final class HUB_Tibox_Settings_Page
 
         update_option(HUB_Tibox_Landing_Forms::OPTION_IP_HEADER, (string) $header, false);
         update_option('hub_tibox_elementor_design_support', isset($_POST['hub_elementor_design_support']) ? '1' : '0', false);
+        update_option(HUB_Tibox_Asset_Optimizer::OPTION, isset($_POST['hub_asset_optimizer']) ? '1' : '0', false);
 
         $retention = isset($_POST['hub_lead_retention_months']) ? absint($_POST['hub_lead_retention_months']) : 0;
         update_option('hub_tibox_lead_retention_months', $retention, false);
