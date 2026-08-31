@@ -69,6 +69,13 @@ final class HUB_Tibox_Landing_Renderer
 
         $landing_id = get_queried_object_id();
 
+        wp_enqueue_style(
+            'constructor-hub-landing-base',
+            TIBOX_AI_FRONTEND_URL . 'assets/css/landing-base.css',
+            [],
+            TIBOX_AI_FRONTEND_VERSION
+        );
+
         wp_enqueue_script(
             'constructor-hub-landing-form',
             TIBOX_AI_FRONTEND_URL . 'assets/js/landing-form.js',
