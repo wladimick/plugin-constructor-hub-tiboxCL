@@ -20,22 +20,24 @@ La documentación es parte del producto. Un cambio de código que altere comport
 
 ## Problema que resuelve
 
-Tibox y Prodata utilizan actualmente WordPress + Elementor. No es viable reemplazar todo el frontend de una sola vez ni cambiar inmediatamente el theme existente.
+Tibox y Prodata utilizan WordPress + Elementor. No es conveniente reemplazar todo el frontend de una sola vez ni cambiar inmediatamente el theme existente.
 
-Constructor HUB Tibox permite una transición por capas:
+Constructor HUB permite una transición por capas:
 
 ```text
-WordPress
-├── contenido
-├── medios
+WordPress backend
+├── contenido / medios
 ├── usuarios
 ├── SEO / Rank Math
-├── formularios / endpoints
 ├── analítica / GTM
 └── Constructor HUB Tibox
-    ├── Header HUB
-    ├── Footer HUB
-    ├── bloques HUB
+    ├── Componentes HUB
+    │   ├── Header
+    │   └── Footer
+    ├── Landings HUB
+    │   ├── HTML / CSS / JS IA
+    │   ├── formulario nativo
+    │   └── leads WordPress
     ├── páginas híbridas
     ├── páginas HUB completas
     └── optimización de assets
@@ -55,46 +57,92 @@ Header, Footer y determinados bloques son HUB. El contenido restante puede segui
 
 La página usa templates y componentes propios HTML/CSS/JS. Elementor puede dejar de cargarse en esa URL.
 
-A futuro existirá un **HUB Tibox Theme opcional**, pero el plugin no debe depender de él. La misma instalación debe poder funcionar con Hello Elementor, themes existentes de clientes y un theme HUB futuro.
+Las **Landings HUB** son un caso especializado de modo HUB para páginas de campaña.
+
+A futuro puede existir un **HUB Tibox Theme opcional**, pero el plugin no debe depender de él.
 
 ## Sitios iniciales
 
 - `tibox.cl`: transición desde WordPress + Hello Elementor + Elementor.
 - `prodata.cl`: transición desde WordPress + Elementor sin cambiar inicialmente su theme.
 
-El núcleo del plugin debe ser reutilizable. Los comportamientos específicos de cada sitio deben resolverse mediante configuración/adaptadores y nunca mezclarse con el core genérico.
+El núcleo debe ser reutilizable. Los comportamientos específicos de cada sitio deben resolverse mediante configuración/adaptadores y nunca mezclarse con el core genérico.
 
 ## Relación con Cloud-tibox
 
-`wladimick/Cloud-tibox` es el antecedente directo de varias ideas de este proyecto:
+`wladimick/Cloud-tibox` es el antecedente directo de varias ideas:
 
-- WordPress como backend.
-- HTML/CSS/JS generado con IA.
-- Design Packages.
-- variables dinámicas `{{...}}`.
-- preview y rollback.
+- WordPress como backend;
+- HTML/CSS/JS generado con IA;
+- Design Packages;
+- variables dinámicas `{{...}}`;
+- preview y rollback;
 - separación entre contenido y presentación.
 
-La diferencia es que Cloud-tibox nació con un theme propio. Constructor HUB Tibox debe poder instalarse primero **sin cambiar el theme existente** y permitir una migración progresiva.
+La diferencia es que Cloud-tibox nació con un theme propio. Constructor HUB debe poder instalarse primero **sin cambiar el theme existente**.
 
 Ver [`docs/CLOUD-TIBOX-RELATION.md`](docs/CLOUD-TIBOX-RELATION.md).
 
-## Estado actual
+## Estado de desarrollo
 
-Versión de trabajo: `0.2.0`.
+### `main`
 
-El código existente proviene del MVP llamado históricamente **Tibox AI Frontend**. Desde v0.2.0 la identidad pública pasa a **Constructor HUB Tibox**.
+Baseline documentada v0.2.0.
 
-Por compatibilidad, algunos nombres internos (`TIBOX_AI_FRONTEND_*`, `TIBOX_AI_Frontend`, `home-ai`, etc.) todavía existen. No deben considerarse la arquitectura final. Su migración será gradual y documentada.
+### `feat/hybrid-header-footer`
 
-El MVP actual permite:
+Beta v0.3.x con Componentes HUB y renderer híbrido Header/Footer + contenido Elementor.
 
-- reemplazar el template de una página seleccionada;
-- mantener `wp_head()`, `wp_body_open()` y `wp_footer()`;
-- conservar Rank Math/GTM/hooks globales;
-- probar una home HTML/CSS/JS propia;
-- descargar assets pesados de Elementor en modo agresivo;
-- usar un formulario nativo conectado al endpoint REST existente de Tibox.
+### `feat/landings-module`
+
+Versión de trabajo `0.4.0-dev`, apilada sobre la rama anterior.
+
+Añade:
+
+- `Constructor HUB → Landings`;
+- páginas de campaña completas HTML/CSS/JS;
+- renderer independiente del template del theme;
+- modo canvas o Header/Footer HUB;
+- variables `{{SITE_*}}`, `{{LANDING_*}}`, logo y `{{HUB_FORM}}`;
+- formulario nativo sin WPForms/Elementor;
+- endpoint REST genérico;
+- `Constructor HUB → Envíos Landings`;
+- almacenamiento de leads;
+- notificación `wp_mail`;
+- tracking UTM/GCLID/GBRAID/WBRAID;
+- `dataLayer` `form_submit`;
+- honeypot, rate limit e idempotencia;
+- hook para bridges externos.
+
+Ver [`docs/changes/2026-08-31-landings-module.md`](docs/changes/2026-08-31-landings-module.md).
+
+## Contrato rápido para una Landing IA
+
+La IA entrega tres piezas:
+
+```text
+index.html
+style.css
+script.js
+```
+
+No debe incluir `<!doctype>`, `<html>`, `<head>`, `<body>`, `<style>` o `<script>` dentro del campo HTML.
+
+Variables disponibles inicialmente:
+
+```text
+{{SITE_URL}}
+{{HOME_URL}}
+{{SITE_NAME}}
+{{CURRENT_YEAR}}
+{{CUSTOM_LOGO}}
+{{CUSTOM_LOGO_URL}}
+{{LANDING_URL}}
+{{LANDING_TITLE}}
+{{HUB_FORM}}
+```
+
+`{{HUB_FORM}}` inserta el formulario nativo. También se acepta un formulario IA personalizado con `data-hub-landing-form`.
 
 ## Principios no negociables
 
@@ -104,7 +152,7 @@ El MVP actual permite:
 - No obligar a cambiar el theme actual.
 - HTML semántico, CSS nativo y JavaScript nativo por defecto.
 - IA nunca debe recibir ni generar secretos/API keys.
-- Los assets de un componente deben cargar solo cuando se utilizan.
+- Los assets deben cargar solo donde corresponden.
 - SEO y analítica se deben conservar durante la migración.
 - Cada cambio importante debe quedar registrado con fecha, rama y commit.
 - Una IA nueva debe poder comprender el proyecto leyendo `/docs` sin depender de conversaciones anteriores.
@@ -122,19 +170,19 @@ main
       └── Pull Request
 ```
 
-Antes de cerrar un cambio se debe actualizar `docs/CHANGELOG.md` con el contexto suficiente para reconstruir qué se hizo y por qué.
+Las features apiladas deben indicar claramente su rama base y no fusionarse fuera de orden.
 
 ## Roadmap resumido
 
-1. Formalizar Constructor HUB Tibox y documentación.
-2. Sistema global de Header/Footer reemplazables.
-3. Biblioteca de componentes.
-4. modos Legacy / Híbrido / HUB por página.
-5. Design System por sitio.
-6. Design Packages compatibles con Claude Design/ChatGPT.
-7. preview, versionado y rollback.
-8. adaptadores Tibox/Prodata.
-9. eliminación selectiva de assets Elementor.
-10. HUB Tibox Theme opcional para sitios 100% migrados.
+1. Fundación/documentación.
+2. Header/Footer HUB.
+3. Design System y biblioteca de componentes.
+4. Design Packages para Claude/ChatGPT.
+5. Landings HUB.
+6. modos Legacy/Híbrido/HUB para Pages estándar.
+7. adaptadores e integraciones.
+8. eliminación selectiva de assets Elementor.
+9. HUB Tibox Theme opcional.
+10. operación multi-sitio/release.
 
 Ver [`docs/ROADMAP.md`](docs/ROADMAP.md) para el detalle.
