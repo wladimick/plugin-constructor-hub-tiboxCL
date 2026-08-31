@@ -21,6 +21,8 @@ final class HUB_Tibox_Landing_Manager
     private const META_USE_HUB_CHROME = '_hub_landing_use_hub_chrome';
     private const META_RECIPIENT_EMAIL = '_hub_landing_recipient_email';
     private const META_SUCCESS_MESSAGE = '_hub_landing_success_message';
+    private const OPTION_REWRITE_VERSION = 'hub_tibox_landing_rewrite_version';
+    private const REWRITE_VERSION = '1';
 
     private static ?self $instance = null;
 
@@ -36,6 +38,7 @@ final class HUB_Tibox_Landing_Manager
     private function __construct()
     {
         add_action('init', [$this, 'register_post_type']);
+        add_action('init', [$this, 'maybe_flush_rewrite_rules'], 99);
         add_action('add_meta_boxes_' . self::POST_TYPE, [$this, 'add_meta_boxes']);
         add_action('save_post_' . self::POST_TYPE, [$this, 'save_landing']);
     }
@@ -76,6 +79,16 @@ final class HUB_Tibox_Landing_Manager
             'capability_type' => 'page',
             'map_meta_cap' => true,
         ]);
+    }
+
+    public function maybe_flush_rewrite_rules(): void
+    {
+        if ((string) get_option(self::OPTION_REWRITE_VERSION, '') === self::REWRITE_VERSION) {
+            return;
+        }
+
+        flush_rewrite_rules(false);
+        update_option(self::OPTION_REWRITE_VERSION, self::REWRITE_VERSION, false);
     }
 
     public function add_meta_boxes(): void
@@ -192,6 +205,11 @@ final class HUB_Tibox_Landing_Manager
             La IA también puede diseñar su propio formulario usando <code>data-hub-landing-form</code> en la etiqueta
             <code>&lt;form&gt;</code>. El campo <code>email</code> y el consentimiento <code>privacy</code> son obligatorios en el endpoint.
             Añadir un honeypot oculto llamado <code>website</code>.
+        </p>
+        <p><strong>URL</strong></p>
+        <p>
+            Por defecto las landings se publican en <code>/landing/slug/</code>. La base puede cambiarse con el filtro
+            <code>constructor_hub_landing_rewrite_slug</code> sin acoplar el core a un sitio específico.
         </p>
         <?php
     }
