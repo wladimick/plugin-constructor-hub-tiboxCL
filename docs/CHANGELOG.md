@@ -6,6 +6,69 @@ Formato requerido desde 2026-08-28: **fecha · rama · commit · objetivo · imp
 
 ---
 
+## 2026-08-31 — Fase 0: bloqueadores de producción
+
+Rama: `feat/hub-v0.5-refundacion`.
+Estado: **implementado / QA WordPress pendiente**.
+
+Origen: auditoría integral del 2026-08-31 sobre `main` v0.4.0-beta.1.
+
+### Objetivo
+
+Cerrar los hallazgos que impiden instalar el plugin en un sitio productivo, sin
+cambiar todavía el modelo de datos.
+
+### Cambios
+
+- **CRIT-01** `origin_is_allowed()` dejaba fuera los envíos desde `www.` y desde
+  alias del sitio, y permitía las peticiones sin cabeceras. Ahora compara contra
+  el conjunto de hosts del sitio normalizando `www.`, es filtrable mediante
+  `constructor_hub_allowed_origins` y no se considera control de seguridad.
+- **CRIT-02** el límite de envíos usaba `REMOTE_ADDR`, que detrás de un CDN es la
+  IP del proxy. Se añade cabecera de IP configurable (`Constructor HUB →
+  Configuración`), presupuestos separados para intentos y para leads creados, y
+  un límite por dirección de correo que funciona aunque todos compartan IP.
+- **CRIT-03** guardar una landing o un componente descartaba HTML/CSS/JS en
+  silencio cuando faltaba `unfiltered_html`. Se introduce
+  `HUB_Tibox_Capabilities` con capacidades propias y un aviso explícito; ya no se
+  guarda parcialmente sin decirlo.
+- **CRIT-04** el formulario del MVP `home-ai` apuntaba a `tibox/v1/lead`, un
+  endpoint que vive en WPCode y no en el plugin. Se registra ese endpoint como
+  alias del pipeline HUB, se envía `landing_id` y el endpoint acepta formularios
+  de cualquier contenido publicado, no solo de landings.
+- **ALTO-01** los modos HTML completo y Package ignoraban
+  `post_password_required()`. Ambos renderers lo respetan.
+- **ALTO-02** la extracción del ZIP confiaba en el tamaño declarado en la
+  cabecera del archivo. La copia ahora está acotada y se verifica el tamaño real
+  escrito contra el presupuesto total.
+- **ALTO-03** los SVG del package se sanean en la importación (se eliminan
+  `script`, `foreignObject`, manejadores `on*` y URLs `javascript:`).
+- **ALTO-07** se elimina `maybe_seed_tibox_mail_recipients()` y con él los
+  correos de empleados de Tibox codificados en el core.
+- **ALTO-10** la cabecera `Reply-To` ya no interpola el nombre del lead.
+- **MED-10** `docs/architecture.md` se elimina del índice de git: colisionaba con
+  `docs/ARCHITECTURE.md` en macOS y Windows.
+- `enable_elementor_support()` deja de escribir la opción global de Elementor sin
+  autorización: ahora es una casilla en Configuración.
+- Se eliminan `strip_php_tags()` y `sanitize_header_value()`, que daban una falsa
+  sensación de control.
+- Se añaden hooks de activación y desactivación: reparto de capacidades,
+  instalación de la tabla de leads y `flush_rewrite_rules`.
+
+### Compatibilidad
+
+- `unfiltered_html` + `manage_options` sigue siendo válido para editar código de
+  diseño en instalaciones que nunca ejecutaron el hook de activación.
+- El endpoint histórico `tibox/v1/lead` queda servido por el plugin, de modo que
+  desactivar el snippet WPCode ya no rompe el formulario de la home.
+
+### QA/deuda
+
+Pendiente QA funcional en WordPress real. La refundación del modelo de datos
+llega en la Fase 1.
+
+---
+
 ## 2026-08-31 — Módulo Landings HUB
 
 Rama: `feat/landings-module`.  

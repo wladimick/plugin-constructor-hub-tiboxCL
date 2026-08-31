@@ -130,6 +130,7 @@
 
         const data = new FormData(form);
         const payload = {
+            landing_id: Number(window.TiboxAIFrontend?.pageId || 0),
             submission_id: makeSubmissionId(),
             form_id: window.TiboxAIFrontend?.formId || 'tibox-ai-home',
             name: String(data.get('name') || '').trim(),
@@ -185,7 +186,8 @@
             setStatus(result.message || 'Recibimos tu solicitud. Te contactaremos pronto.', 'success');
             form.reset();
 
-            if (result.lead_created && Array.isArray(window.dataLayer)) {
+            if (result.lead_created) {
+                window.dataLayer = window.dataLayer || [];
                 window.dataLayer.push({
                     event: 'form_submit',
                     form_id: payload.form_id,

@@ -1,0 +1,129 @@
+<?php
+
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+/**
+ * Constructor HUB capability map.
+ *
+ * The plugin used to lean on `manage_options` for operations and on
+ * `unfiltered_html` for design code. Both are wrong in opposite directions: any
+ * Editor could publish arbitrary JavaScript on a public URL, while a commercial
+ * user needed full administrator rights just to read leads.
+ */
+final class HUB_Tibox_Capabilities
+{
+    public const MANAGE_DESIGNS = 'hub_manage_designs';
+    public const EDIT_DESIGN_CODE = 'hub_edit_design_code';
+    public const PUBLISH_DESIGNS = 'hub_publish_designs';
+    public const MANAGE_LEADS = 'hub_manage_leads';
+    public const EXPORT_LEADS = 'hub_export_leads';
+    public const MANAGE_SETTINGS = 'hub_manage_settings';
+
+    private const NOTICE_TRANSIENT = 'hub_tibox_code_not_saved_';
+
+    /** @return string[] */
+    public static function all(): array
+    {
+        return [
+            self::MANAGE_DESIGNS,
+            self::EDIT_DESIGN_CODE,
+            self::PUBLISH_DESIGNS,
+            self::MANAGE_LEADS,
+            self::EXPORT_LEADS,
+            self::MANAGE_SETTINGS,
+        ];
+    }
+
+    /**
+     * Roles receiving HUB capabilities on activation.
+     *
+     * @return array<string,string[]>
+     */
+    public static function role_map(): array
+    {
+        return (array) apply_filters('constructor_hub_role_capabilities', [
+            'administrator' => self::all(),
+            'editor' => [self::MANAGE_DESIGNS, self::MANAGE_LEADS],
+        ]);
+    }
+
+    public static function grant(): void
+    {
+        foreach (self::role_map() as $role_name => $caps) {
+            $role = get_role((string) $role_name);
+            if (!$role instanceof WP_Role) {
+                continue;
+            }
+            foreach ((array) $caps as $cap) {
+                $role->add_cap((string) $cap);
+            }
+        }
+    }
+
+    public static function revoke(): void
+    {
+        foreach (array_keys(self::role_map()) as $role_name) {
+            $role = get_role((string) $role_name);
+            if (!$role instanceof WP_Role) {
+                continue;
+            }
+            foreach (self::all() as $cap) {
+                $role->remove_cap($cap);
+            }
+        }
+    }
+
+    /**
+     * Design code is HTML, CSS and JavaScript served on the site origin, so the
+     * bar is deliberately high. `unfiltered_html` still passes for backward
+     * compatibility with installs that never ran the activation hook.
+     */
+    public static function can_edit_design_code(): bool
+    {
+        return current_user_can(self::EDIT_DESIGN_CODE)
+            || (current_user_can('manage_options') && current_user_can('unfiltered_html'));
+    }
+
+    public static function can_manage_leads(): bool
+    {
+        return current_user_can(self::MANAGE_LEADS) || current_user_can('manage_options');
+    }
+
+    public static function can_export_leads(): bool
+    {
+        return current_user_can(self::EXPORT_LEADS) || current_user_can('manage_options');
+    }
+
+    public static function can_manage_settings(): bool
+    {
+        return current_user_can(self::MANAGE_SETTINGS) || current_user_can('manage_options');
+    }
+
+    public static function can_manage_designs(): bool
+    {
+        return current_user_can(self::MANAGE_DESIGNS) || current_user_can('manage_options');
+    }
+
+    /** Records that a save discarded design code so the user gets told. */
+    public static function flag_code_not_saved(): void
+    {
+        set_transient(self::NOTICE_TRANSIENT . get_current_user_id(), '1', 60);
+    }
+
+    public static function render_notices(): void
+    {
+        $key = self::NOTICE_TRANSIENT . get_current_user_id();
+        if (get_transient($key) === false) {
+            return;
+        }
+        delete_transient($key);
+
+        echo '<div class="notice notice-error"><p><strong>'
+            . esc_html__('Constructor HUB: el diseño no se guardó.', 'constructor-hub-tibox')
+            . '</strong> '
+            . esc_html__('Tu rol no tiene permiso para editar código de diseño (HTML/CSS/JavaScript). El resto de los campos sí se guardaron. Pide a un administrador la capacidad hub_edit_design_code.', 'constructor-hub-tibox')
+            . '</p></div>';
+    }
+}

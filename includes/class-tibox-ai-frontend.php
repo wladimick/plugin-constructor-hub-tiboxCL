@@ -203,7 +203,8 @@ final class TIBOX_AI_Frontend
                 'tibox-ai-page-' . $template,
                 'TiboxAIFrontend',
                 [
-                    'restEndpoint' => esc_url_raw(rest_url('tibox/v1/lead')),
+                    'restEndpoint' => esc_url_raw(rest_url('constructor-hub/v1/landing-submit')),
+                    'pageId' => get_queried_object_id(),
                     'pageUrl' => esc_url_raw(get_permalink()),
                     'pagePath' => sanitize_text_field((string) wp_parse_url(get_permalink(), PHP_URL_PATH)),
                     'pageTitle' => sanitize_text_field(wp_get_document_title()),

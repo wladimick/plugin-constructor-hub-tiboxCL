@@ -184,8 +184,10 @@ final class HUB_Tibox_Landing_Mailer
             $headers = ['Content-Type: text/html; charset=UTF-8'];
             $email = sanitize_email((string) ($fields['email'] ?? ''));
             if ($email !== '' && is_email($email)) {
-                $name = $this->sanitize_header_value((string) ($fields['name'] ?? 'Contacto'));
-                $headers[] = sprintf('Reply-To: %s <%s>', $name !== '' ? $name : 'Contacto', $email);
+                // Only the address goes in the header. A display name is
+                // attacker controlled and `Juan <otro@dominio.cl>, Juan` would
+                // add a second recipient to every reply.
+                $headers[] = sprintf('Reply-To: <%s>', $email);
             }
 
             $sent = wp_mail(
@@ -328,8 +330,4 @@ final class HUB_Tibox_Landing_Mailer
             . '</div></div>';
     }
 
-    private function sanitize_header_value(string $value): string
-    {
-        return trim(str_replace(["\r", "\n"], '', $value));
-    }
 }

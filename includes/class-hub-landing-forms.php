@@ -11,6 +11,9 @@ final class HUB_Tibox_Landing_Forms
 {
     private const REST_NAMESPACE = 'constructor-hub/v1';
     private const REST_ROUTE = '/landing-submit';
+    private const LEGACY_NAMESPACE = 'tibox/v1';
+    private const LEGACY_ROUTE = '/lead';
+    public const OPTION_IP_HEADER = 'hub_tibox_client_ip_header';
 
     private static ?self $instance = null;
     private HUB_Tibox_Landing_Manager $landings;
@@ -49,6 +52,15 @@ final class HUB_Tibox_Landing_Forms
             'callback' => [$this, 'handle_submission'],
             'permission_callback' => '__return_true',
         ]);
+
+        // Compatibility alias for the historical WPCode endpoint consumed by the
+        // MVP `home-ai` template. Keeping it registered here means retiring the
+        // WPCode snippet no longer silently breaks that form.
+        register_rest_route(self::LEGACY_NAMESPACE, self::LEGACY_ROUTE, [
+            'methods' => WP_REST_Server::CREATABLE,
+            'callback' => [$this, 'handle_submission'],
+            'permission_callback' => '__return_true',
+        ]);
     }
 
     public function endpoint_url(): string
@@ -62,7 +74,7 @@ final class HUB_Tibox_Landing_Forms
             return $this->response(false, false, 'Origen no permitido.', 403);
         }
 
-        if (!$this->rate_limit_allows_submission()) {
+        if (!$this->attempt_budget_allows()) {
             return $this->response(false, false, 'Demasiados intentos. Intenta nuevamente en unos minutos.', 429);
         }
 
@@ -73,15 +85,19 @@ final class HUB_Tibox_Landing_Forms
         $payload = is_array($payload) ? $payload : [];
 
         $landing_id = absint($payload['landing_id'] ?? 0);
-        if (
-            $landing_id <= 0 ||
-            get_post_type($landing_id) !== HUB_Tibox_Landing_Manager::POST_TYPE ||
-            get_post_status($landing_id) !== 'publish'
-        ) {
-            return $this->response(false, false, 'Landing no válida.', 400);
+        if ($landing_id <= 0 || get_post_status($landing_id) !== 'publish') {
+            return $this->response(false, false, 'Origen del formulario no válido.', 400);
         }
 
-        $submission_id = sanitize_text_field((string) ($payload['submission_id'] ?? ''));
+        $is_landing = get_post_type($landing_id) === HUB_Tibox_Landing_Manager::POST_TYPE;
+        $source_key = $is_landing ? 'constructor_hub_landing' : 'constructor_hub_page';
+
+        // The submission id is client supplied. The column is varchar(100) and a
+        // longer value would abort the INSERT on MySQL strict mode.
+        $submission_id = $this->truncate(
+            sanitize_text_field((string) ($payload['submission_id'] ?? '')),
+            100
+        );
         if ($submission_id === '') {
             $submission_id = wp_generate_uuid4();
         }
@@ -122,11 +138,21 @@ final class HUB_Tibox_Landing_Forms
             ], 422);
         }
 
+        if (!$this->creation_budget_allows((string) ($fields['email'] ?? ''))) {
+            return $this->response(
+                false,
+                false,
+                'Ya registramos varias solicitudes recientes con estos datos. Intenta nuevamente más tarde.',
+                429,
+                $submission_id
+            );
+        }
+
         $lead_id = $this->store->insert([
             'submission_id' => $submission_id,
             'landing_id' => $landing_id,
             'form_id' => sanitize_key((string) ($payload['form_id'] ?? 'hub-landing-form')),
-            'source_key' => 'constructor_hub_landing',
+            'source_key' => $source_key,
             'fields' => $fields,
             'tracking' => $tracking,
         ]);
@@ -140,6 +166,8 @@ final class HUB_Tibox_Landing_Forms
                 $submission_id
             );
         }
+
+        $this->register_created_submission((string) ($fields['email'] ?? ''));
 
         $this->mailer->send_lead_notifications($landing_id, $lead_id, $fields, $tracking);
 
@@ -158,7 +186,7 @@ final class HUB_Tibox_Landing_Forms
                 'lead_id' => $lead_id,
                 'landing_id' => $landing_id,
                 'submission_id' => $submission_id,
-                'source_key' => 'constructor_hub_landing',
+                'source_key' => $source_key,
             ]
         ));
 
@@ -479,40 +507,153 @@ final class HUB_Tibox_Landing_Forms
         return hash_equals($expected, $provided);
     }
 
+    /**
+     * Reject only requests that positively declare a foreign origin.
+     *
+     * The previous implementation compared the raw host against home_url() and
+     * rejected `www.` variants and site aliases, which silently dropped real
+     * leads on paid campaigns. A missing header is not treated as proof of
+     * anything: spam control belongs to the honeypot and the rate budgets.
+     */
     private function origin_is_allowed(WP_REST_Request $request): bool
     {
-        $site_host = strtolower((string) wp_parse_url(home_url('/'), PHP_URL_HOST));
-        if ($site_host === '') {
+        $allowed = $this->allowed_hosts();
+        if ($allowed === []) {
             return true;
         }
 
         foreach (['origin', 'referer'] as $header) {
             $value = (string) $request->get_header($header);
-            if ($value === '') {
+            if ($value === '' || strtolower($value) === 'null') {
                 continue;
             }
-            $host = strtolower((string) wp_parse_url($value, PHP_URL_HOST));
-            if ($host !== '' && $host !== $site_host) {
+
+            $host = $this->normalize_host((string) wp_parse_url($value, PHP_URL_HOST));
+            if ($host !== '' && !in_array($host, $allowed, true)) {
                 return false;
             }
         }
+
         return true;
     }
 
-    private function rate_limit_allows_submission(): bool
+    /** @return string[] */
+    private function allowed_hosts(): array
     {
-        $ip = isset($_SERVER['REMOTE_ADDR'])
-            ? sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR']))
+        $hosts = [];
+        foreach ([home_url('/'), site_url('/'), (string) get_option('siteurl')] as $url) {
+            $host = $this->normalize_host((string) wp_parse_url((string) $url, PHP_URL_HOST));
+            if ($host !== '') {
+                $hosts[] = $host;
+            }
+        }
+
+        $hosts = array_map(
+            fn($host): string => $this->normalize_host((string) $host),
+            (array) apply_filters('constructor_hub_allowed_origins', $hosts)
+        );
+
+        return array_values(array_unique(array_filter($hosts)));
+    }
+
+    private function normalize_host(string $host): string
+    {
+        $host = strtolower(trim($host));
+        return str_starts_with($host, 'www.') ? substr($host, 4) : $host;
+    }
+
+    /**
+     * Best effort client IP.
+     *
+     * REMOTE_ADDR is the only value that cannot be spoofed, but behind a CDN it
+     * is the proxy address and would rate limit the whole site as one visitor.
+     * The forwarding header is therefore opt-in: it must be configured by an
+     * administrator who knows the site sits behind that proxy.
+     */
+    private function client_ip(): string
+    {
+        $header = (string) apply_filters(
+            'constructor_hub_client_ip_header',
+            (string) get_option(self::OPTION_IP_HEADER, '')
+        );
+
+        if ($header !== '') {
+            $header = strtoupper(str_replace('-', '_', $header));
+            if (!str_starts_with($header, 'HTTP_') && $header !== 'REMOTE_ADDR') {
+                $header = 'HTTP_' . $header;
+            }
+            if (!empty($_SERVER[$header])) {
+                $raw = sanitize_text_field(wp_unslash((string) $_SERVER[$header]));
+                foreach (explode(',', $raw) as $candidate) {
+                    $candidate = trim($candidate);
+                    if (filter_var($candidate, FILTER_VALIDATE_IP)) {
+                        return $candidate;
+                    }
+                }
+            }
+        }
+
+        return isset($_SERVER['REMOTE_ADDR'])
+            ? sanitize_text_field(wp_unslash((string) $_SERVER['REMOTE_ADDR']))
             : 'unknown';
-        $hash = hash_hmac('sha256', $ip, wp_salt('auth'));
-        $key = 'hub_lp_rate_' . substr($hash, 0, 24);
+    }
+
+    private function budget_key(string $prefix, string $value): string
+    {
+        return 'hub_lp_' . $prefix . '_' . substr(hash_hmac('sha256', $value, wp_salt('auth')), 0, 24);
+    }
+
+    /**
+     * Ceiling for raw attempts. Deliberately generous: a visitor correcting a
+     * RUT or an email must never be locked out of the form.
+     */
+    private function attempt_budget_allows(): bool
+    {
+        $max = (int) apply_filters('constructor_hub_max_attempts_per_window', 60);
+        $key = $this->budget_key('att', $this->client_ip());
         $count = (int) get_transient($key);
 
-        if ($count >= 8) {
+        if ($count >= $max) {
             return false;
         }
+
         set_transient($key, $count + 1, 10 * MINUTE_IN_SECONDS);
         return true;
+    }
+
+    /**
+     * Budget for leads that are actually created. The email based key keeps
+     * working when every visitor shares a proxy address.
+     */
+    private function creation_budget_allows(string $email): bool
+    {
+        $max_ip = (int) apply_filters('constructor_hub_max_leads_per_ip', 12);
+        $max_email = (int) apply_filters('constructor_hub_max_leads_per_email', 3);
+
+        if ((int) get_transient($this->budget_key('ip', $this->client_ip())) >= $max_ip) {
+            return false;
+        }
+
+        $email = strtolower(trim($email));
+        if ($email !== '' && (int) get_transient($this->budget_key('mail', $email)) >= $max_email) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private function register_created_submission(string $email): void
+    {
+        $ip_key = $this->budget_key('ip', $this->client_ip());
+        set_transient($ip_key, ((int) get_transient($ip_key)) + 1, 10 * MINUTE_IN_SECONDS);
+
+        $email = strtolower(trim($email));
+        if ($email === '') {
+            return;
+        }
+
+        $mail_key = $this->budget_key('mail', $email);
+        set_transient($mail_key, ((int) get_transient($mail_key)) + 1, HOUR_IN_SECONDS);
     }
 
     private function truncate(string $value, int $length): string

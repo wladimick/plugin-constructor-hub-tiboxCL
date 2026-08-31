@@ -130,7 +130,14 @@ final class HUB_Tibox_Landing_Zip_Importer
         require_once ABSPATH . 'wp-admin/includes/file.php';
         $uploaded = wp_handle_upload($file, [
             'test_form' => false,
-            'mimes' => ['zip' => 'application/zip'],
+            // Windows and several browsers announce ZIP files with other MIME
+            // strings. The real validation is the content inspection below.
+            'mimes' => [
+                'zip' => 'application/zip',
+                'zip|x-zip' => 'application/x-zip-compressed',
+                'zip|multipart' => 'multipart/x-zip',
+                'zip|octet' => 'application/octet-stream',
+            ],
         ]);
 
         if (!is_array($uploaded) || !empty($uploaded['error']) || empty($uploaded['file'])) {
@@ -238,6 +245,8 @@ final class HUB_Tibox_Landing_Zip_Importer
             return new WP_Error('hub_zip_mkdir', 'No fue posible crear la carpeta temporal de extracción.');
         }
 
+        $written_total = 0;
+
         foreach ($manifest as $item) {
             $destination = trailingslashit($staging) . $item['path'];
             if ($item['dir']) {
@@ -266,11 +275,31 @@ final class HUB_Tibox_Landing_Zip_Importer
                 return new WP_Error('hub_zip_write', 'No fue posible escribir un archivo del package.');
             }
 
-            stream_copy_to_stream($stream, $out);
+            // The size validated above comes from the archive header, which the
+            // archive declares about itself. Bound the actual copy so a
+            // decompression bomb cannot fill the disk.
+            $budget = min($max_single, max(0, $max_total - $written_total));
+            $written = (int) stream_copy_to_stream($stream, $out, $budget + 1);
             fclose($stream);
             fclose($out);
+
+            $written_total += $written;
+            if ($written > $max_single || $written_total > $max_total) {
+                $zip->close();
+                $this->rrmdir($staging);
+                return new WP_Error(
+                    'hub_zip_bomb',
+                    'El contenido real del ZIP supera el límite permitido al descomprimirse: ' . esc_html($item['path'])
+                );
+            }
         }
         $zip->close();
+
+        $svg_error = $this->sanitize_extracted_svgs($staging);
+        if (is_wp_error($svg_error)) {
+            $this->rrmdir($staging);
+            return $svg_error;
+        }
 
         $entry = $this->find_entry_html($staging);
         if ($entry === '') {
@@ -285,6 +314,120 @@ final class HUB_Tibox_Landing_Zip_Importer
         }
 
         return $entry;
+    }
+
+    /**
+     * SVG is XML: it can carry <script>, event handlers and javascript: URLs,
+     * and once extracted it is served from the site origin. Every SVG in a
+     * package is rewritten to a passive subset before it becomes reachable.
+     *
+     * @return true|WP_Error
+     */
+    private function sanitize_extracted_svgs(string $dir)
+    {
+        if (!apply_filters('constructor_hub_zip_allow_svg', true)) {
+            return true;
+        }
+
+        $iterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS)
+        );
+
+        foreach ($iterator as $file) {
+            if (!$file instanceof SplFileInfo || !$file->isFile()) {
+                continue;
+            }
+            if (strtolower($file->getExtension()) !== 'svg') {
+                continue;
+            }
+
+            $path = $file->getPathname();
+            $contents = file_get_contents($path);
+            if ($contents === false) {
+                return new WP_Error('hub_zip_svg_read', 'No fue posible inspeccionar un SVG del package.');
+            }
+
+            $clean = self::sanitize_svg($contents);
+            if ($clean === null) {
+                return new WP_Error(
+                    'hub_zip_svg',
+                    'Un SVG del package no pudo sanearse: ' . esc_html(basename($path))
+                );
+            }
+
+            if (file_put_contents($path, $clean) === false) {
+                return new WP_Error('hub_zip_svg_write', 'No fue posible sanear un SVG del package.');
+            }
+        }
+
+        return true;
+    }
+
+    /** Returns the passive SVG, or null when it cannot be parsed. */
+    public static function sanitize_svg(string $svg): ?string
+    {
+        if (trim($svg) === '') {
+            return $svg;
+        }
+
+        $previous = libxml_use_internal_errors(true);
+        $document = new DOMDocument();
+        $loaded = $document->loadXML($svg, LIBXML_NONET | LIBXML_NOENT);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+
+        if (!$loaded) {
+            return null;
+        }
+
+        $forbidden_tags = ['script', 'foreignobject', 'iframe', 'embed', 'object', 'handler', 'set', 'animate'];
+        $xpath = new DOMXPath($document);
+
+        foreach ($forbidden_tags as $tag) {
+            $nodes = $xpath->query('//*[translate(local-name(), "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")="' . $tag . '"]');
+            if ($nodes === false) {
+                continue;
+            }
+            foreach (iterator_to_array($nodes) as $node) {
+                if ($node instanceof DOMNode && $node->parentNode instanceof DOMNode) {
+                    $node->parentNode->removeChild($node);
+                }
+            }
+        }
+
+        $elements = $xpath->query('//*');
+        if ($elements !== false) {
+            foreach ($elements as $element) {
+                if (!$element instanceof DOMElement) {
+                    continue;
+                }
+                foreach (iterator_to_array($element->attributes ?? []) as $attribute) {
+                    if (!$attribute instanceof DOMAttr) {
+                        continue;
+                    }
+                    $name = strtolower($attribute->nodeName);
+                    $value = (string) $attribute->nodeValue;
+                    $normalized = strtolower(preg_replace('/\s+/', '', $value) ?? $value);
+
+                    if (str_starts_with($name, 'on')) {
+                        $element->removeAttributeNode($attribute);
+                        continue;
+                    }
+                    if (in_array($name, ['href', 'xlink:href', 'src', 'from', 'to', 'values'], true)) {
+                        if (str_starts_with($normalized, 'javascript:') || str_starts_with($normalized, 'data:text/html')) {
+                            $element->removeAttributeNode($attribute);
+                        }
+                        continue;
+                    }
+                    if ($name === 'style' && (str_contains($normalized, 'javascript:') || str_contains($normalized, 'expression('))) {
+                        $element->removeAttributeNode($attribute);
+                    }
+                }
+            }
+        }
+
+        $output = $document->saveXML();
+        return $output === false ? null : $output;
     }
 
     private function validate_relative_path(string $path): string
@@ -326,6 +469,10 @@ final class HUB_Tibox_Landing_Zip_Importer
     public function maybe_render_package(): void
     {
         if (is_admin() || !is_singular(HUB_Tibox_Landing_Manager::POST_TYPE) || is_feed() || is_embed()) {
+            return;
+        }
+
+        if (post_password_required(get_queried_object_id())) {
             return;
         }
 

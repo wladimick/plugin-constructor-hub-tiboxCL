@@ -212,7 +212,6 @@ final class HUB_Tibox_Legacy_Migrator
             $created++;
         }
 
-        $this->maybe_seed_tibox_mail_recipients();
         $lead_result = $this->store->migrate_legacy_leads();
 
         $result = [
@@ -286,22 +285,4 @@ final class HUB_Tibox_Legacy_Migrator
         return trailingslashit($upload['basedir']) . 'tibox-landings/' . $legacy_id;
     }
 
-    private function maybe_seed_tibox_mail_recipients(): void
-    {
-        $host = strtolower((string) wp_parse_url(home_url('/'), PHP_URL_HOST));
-        if ($host !== 'tibox.cl' && $host !== 'www.tibox.cl') {
-            return;
-        }
-
-        $current = trim((string) get_option(HUB_Tibox_Landing_Mailer::OPTION_RECIPIENTS, ''));
-        if ($current !== '' && $current !== trim((string) get_option('admin_email'))) {
-            return;
-        }
-
-        update_option(
-            HUB_Tibox_Landing_Mailer::OPTION_RECIPIENTS,
-            "contacto@tibox.cl\nbcastro@tibox.cl\npfarias@tibox.cl",
-            false
-        );
-    }
 }

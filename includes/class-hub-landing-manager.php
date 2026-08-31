@@ -112,9 +112,18 @@ final class HUB_Tibox_Landing_Manager
         update_option(self::OPTION_REWRITE_VERSION, self::REWRITE_VERSION, false);
     }
 
+    /**
+     * Elementor support is opt-in and lives in the Elementor adapter, not in the
+     * core: writing another plugin's global option on every admin request is an
+     * invisible side effect and contradicts ADR-0001.
+     */
     public function enable_elementor_support(): void
     {
         if (!did_action('elementor/loaded')) {
+            return;
+        }
+
+        if (get_option('hub_tibox_elementor_landing_support', '0') !== '1') {
             return;
         }
 
@@ -346,13 +355,20 @@ final class HUB_Tibox_Landing_Manager
         $notes = isset($_POST['hub_landing_ads_notes']) ? sanitize_textarea_field(wp_unslash($_POST['hub_landing_ads_notes'])) : '';
         update_post_meta($post_id, self::META_ADS_NOTES, $notes);
 
-        if (current_user_can('unfiltered_html')) {
-            update_post_meta($post_id, self::META_HTML, isset($_POST['hub_landing_html']) ? wp_unslash($_POST['hub_landing_html']) : '');
-            update_post_meta($post_id, self::META_CSS, isset($_POST['hub_landing_css']) ? wp_unslash($_POST['hub_landing_css']) : '');
-            update_post_meta($post_id, self::META_JS, isset($_POST['hub_landing_js']) ? wp_unslash($_POST['hub_landing_js']) : '');
-            $full_html = isset($_POST['hub_landing_full_html']) ? wp_unslash($_POST['hub_landing_full_html']) : '';
-            update_post_meta($post_id, self::META_FULL_HTML, $this->strip_php_tags($full_html));
+        if (!HUB_Tibox_Capabilities::can_edit_design_code()) {
+            // Never drop the design silently: the previous behaviour saved the
+            // rest of the form and discarded HTML/CSS/JS with no feedback, which
+            // is total data loss on multisite where only super admins hold
+            // `unfiltered_html`.
+            HUB_Tibox_Capabilities::flag_code_not_saved();
+            return;
         }
+
+        update_post_meta($post_id, self::META_HTML, isset($_POST['hub_landing_html']) ? wp_unslash($_POST['hub_landing_html']) : '');
+        update_post_meta($post_id, self::META_CSS, isset($_POST['hub_landing_css']) ? wp_unslash($_POST['hub_landing_css']) : '');
+        update_post_meta($post_id, self::META_JS, isset($_POST['hub_landing_js']) ? wp_unslash($_POST['hub_landing_js']) : '');
+        $full_html = isset($_POST['hub_landing_full_html']) ? wp_unslash($_POST['hub_landing_full_html']) : '';
+        update_post_meta($post_id, self::META_FULL_HTML, $full_html);
     }
 
     public function get_mode(int $post_id): string
@@ -404,7 +420,7 @@ final class HUB_Tibox_Landing_Manager
         update_post_meta($post_id, self::META_HTML, (string) ($data['html'] ?? ''));
         update_post_meta($post_id, self::META_CSS, (string) ($data['css'] ?? ''));
         update_post_meta($post_id, self::META_JS, (string) ($data['js'] ?? ''));
-        update_post_meta($post_id, self::META_FULL_HTML, $this->strip_php_tags((string) ($data['full_html'] ?? '')));
+        update_post_meta($post_id, self::META_FULL_HTML, (string) ($data['full_html'] ?? ''));
         update_post_meta($post_id, self::META_USE_HUB_CHROME, !empty($data['use_hub_chrome']) ? '1' : '0');
 
         $required = is_array($data['required_fields'] ?? null) ? $data['required_fields'] : [];
@@ -581,11 +597,5 @@ final class HUB_Tibox_Landing_Manager
             $value = '';
         }
         update_post_meta($post_id, $meta_key, $value);
-    }
-
-    private function strip_php_tags(string $content): string
-    {
-        $content = preg_replace('/<\?php[\s\S]*?\?>/i', '', $content) ?? $content;
-        return preg_replace('/<\?=[\s\S]*?\?>/i', '', $content) ?? $content;
     }
 }

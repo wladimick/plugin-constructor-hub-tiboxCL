@@ -42,6 +42,11 @@ final class HUB_Tibox_Landing_Renderer
         if (!$this->is_landing_request()) {
             return;
         }
+        // A full document render bypasses the theme entirely, so WordPress never
+        // gets the chance to apply its own password gate.
+        if (post_password_required(get_queried_object_id())) {
+            return;
+        }
         $landing_id = get_queried_object_id();
         if ($this->landings->get_mode($landing_id) !== HUB_Tibox_Landing_Manager::MODE_STANDALONE) {
             return;
