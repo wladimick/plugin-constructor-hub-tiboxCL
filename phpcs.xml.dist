@@ -53,7 +53,10 @@
     <rule ref="WordPress.WP.I18n">
         <properties>
             <property name="text_domain" type="array">
+                <!-- The plugin and the optional HUB Theme ship from the same
+                     repository and each owns its own text domain. -->
                 <element value="constructor-hub-tibox"/>
+                <element value="hub-theme"/>
             </property>
         </properties>
     </rule>
@@ -65,6 +68,8 @@
                 <element value="constructor_hub"/>
                 <element value="HUB_Tibox"/>
                 <element value="TIBOX_AI"/>
+                <element value="hub_theme"/>
+                <element value="HUB_THEME"/>
             </property>
         </properties>
         <!-- Template scope variables are not globals. -->

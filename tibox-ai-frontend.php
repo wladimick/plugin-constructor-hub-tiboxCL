@@ -42,6 +42,7 @@ require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-regions.php';
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-render.php';
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-asset-optimizer.php';
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-migration-map.php';
+require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-site-config.php';
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-insertion.php';
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-design-system.php';
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-form-config.php';

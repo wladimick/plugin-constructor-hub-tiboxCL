@@ -6,6 +6,46 @@ Formato requerido desde 2026-08-28: **fecha · rama · commit · objetivo · imp
 
 ---
 
+## 2026-08-31 — Fase 6: HUB Theme opcional y operación multi-sitio
+
+Rama: `feat/hub-v0.5-refundacion`.
+Estado: **implementado / QA WordPress pendiente**.
+
+### Objetivo
+
+Cerrar el recorrido: un theme para cuando el sitio ya no necesita el anterior, y
+las herramientas para poner en marcha un cliente nuevo sin copiar ajustes a
+mano.
+
+### Cambios
+
+- **HUB Theme** en `theme/hub-theme/`: chasis ultraliviano con `header.php`,
+  `footer.php`, `index.php`, `singular.php` y `404.php`, hooks de WordPress
+  intactos, Header y Footer delegados a las regiones HUB y `theme.json` que
+  expone los tokens `--hub-*` como paleta del editor.
+  Sigue siendo **opcional**; no se empaqueta dentro del plugin.
+  Si Constructor HUB se desactiva, el sitio sigue navegable con una cabecera de
+  respaldo mínima.
+- **Diagnóstico** (`Constructor HUB → Diagnóstico`): escritura en uploads,
+  ZipArchive, WP-Cron, transporte de correo, Elementor, plugin SEO, entregas
+  fallidas y estado del modelo de diseños, más las versiones de todo.
+- **Export/import de configuración**: tokens, regiones y ajustes generales viajan
+  en JSON entre sitios. Las regiones se transportan por slug de diseño, no por
+  ID. **Los destinatarios de correo nunca se importan**: enviar los leads de un
+  cliente al buzón de otro es exactamente el fallo que la auditoría encontró en
+  los correos codificados en el core.
+
+### Archivos principales
+
+`theme/hub-theme/`, `theme/README.md`, `includes/class-hub-site-config.php`.
+
+### QA
+
+PHPCS y PHPStan nivel 5 sin errores. Pendiente: activar el theme sobre una copia
+de tibox.cl y comparar Core Web Vitals contra Hello Elementor.
+
+---
+
 ## 2026-08-31 — Fase 5: migración de Elementor y WPCode
 
 Rama: `feat/hub-v0.5-refundacion`.

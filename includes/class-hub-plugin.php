@@ -71,6 +71,7 @@ final class HUB_Tibox_Plugin
         HUB_Tibox_Package::instance();
         HUB_Tibox_Asset_Optimizer::instance();
         HUB_Tibox_Migration_Map::instance();
+        HUB_Tibox_Site_Config::instance();
         HUB_Tibox_Elementor_Adapter::instance();
 
         if (is_admin()) {

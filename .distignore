@@ -9,5 +9,6 @@ phpstan.neon.dist
 docs
 examples
 tests
+theme
 vendor
 dist
