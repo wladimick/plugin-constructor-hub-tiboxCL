@@ -4,6 +4,8 @@
 
 Este documento es el punto de entrada obligatorio para cualquier IA o persona que trabaje en **Constructor HUB Tibox**.
 
+> Auditoría actual: leer también `docs/AUDIT-HANDOFF-2026-08-31.md`. El estado v0.4 fue consolidado en `main` expresamente para auditoría y todavía no debe interpretarse como release estable.
+
 ## 1. Qué es este proyecto
 
 Constructor HUB Tibox es un plugin WordPress creado para migrar progresivamente sitios existentes desde Elementor/constructores visuales hacia frontend HTML/CSS/JS propio, manteniendo WordPress como backend.
@@ -54,15 +56,19 @@ Por compatibilidad todavía existen nombres históricos como:
 
 No asumir que esos nombres representan la arquitectura final. Deben migrarse gradualmente y con compatibilidad.
 
-## 5. Estado funcional actual
+## 5. Estado funcional actual en `main`
 
-### Baseline en `main`
+El 2026-08-31 se consolidaron en `main` las fases v0.3 y v0.4 para permitir una auditoría integral del plugin.
 
-`main` conserva la fundación v0.2.0 y la documentación base.
+### Header/Footer HUB — v0.3
 
-### Rama `feat/hybrid-header-footer`
+Rama histórica: `feat/hybrid-header-footer`.
 
-Implementa:
+- PR histórico `#2`: cerrado sin merge por permanecer Draft.
+- PR de consolidación `#4`: mergeado.
+- Merge commit: `ccd3949fcb0132cba6fa4107ad5c9479b4700776`.
+
+Incluye:
 
 - CPT `hub_component`;
 - Header/Footer HUB;
@@ -70,38 +76,38 @@ Implementa:
 - configuración de componentes activos;
 - renderer híbrido `Header HUB + the_content() + Footer HUB`;
 - CI PHP/JavaScript;
-- ejemplo Header/Footer Tibox 2026;
-- build beta `0.3.0-beta.1`.
+- ejemplo Header/Footer Tibox 2026.
 
-Esta rama todavía requiere QA WordPress antes de merge.
+### Landings HUB — v0.4
 
-### Rama `feat/landings-module`
+Rama histórica: `feat/landings-module`.
 
-Rama apilada sobre `feat/hybrid-header-footer`.
+- PR histórico `#3`: cerrado sin merge por ser Draft/apilado.
+- PR de consolidación `#5`: mergeado.
+- Merge commit: `705ce5c66ff8bebffbfb310fd1f212d00755e6b4`.
 
-Implementa **Landings HUB**:
+El estado consolidado incluye, entre otras piezas:
 
 - menú `Constructor HUB → Landings`;
-- CPT público `hub_landing`;
-- editor HTML/CSS/JS;
-- template full-page sin render Elementor;
-- canvas independiente o Header/Footer HUB;
-- variables dinámicas;
-- `{{HUB_FORM}}`;
-- formularios IA custom con `data-hub-landing-form`;
-- endpoint `POST /wp-json/constructor-hub/v1/landing-submit`;
-- CPT privado `hub_landing_lead` y menú `Envíos Landings`;
-- `wp_mail` por landing;
-- UTMs/GCLID/GBRAID/WBRAID;
-- honeypot, rate limit e idempotencia;
-- evento `dataLayer` `form_submit`;
-- hook `constructor_hub_landing_lead_created`;
-- ejemplo `examples/landing-starter/`.
+- CPT público de Landings;
+- HTML/CSS/JS generado por IA;
+- renderer HUB;
+- modos Legacy/HUB/HTML completo/Package en evolución;
+- Header/Footer HUB opcionales;
+- formulario HUB nativo;
+- endpoint REST propio;
+- tracking UTM/GCLID/GBRAID/WBRAID;
+- honeypot/rate limit/idempotencia;
+- correo mediante `wp_mail()`;
+- compatibilidad esperada con WP Mail SMTP/SendGrid;
+- almacenamiento de leads y migración desde la implementación WPCode en evolución;
+- datos/protección de campañas Google Ads;
+- importador ZIP de Claude/IA con validaciones de seguridad;
+- compatibilidad temporal con integraciones históricas como WebOps.
 
-Leer:
+**Importante:** el merge se realizó para que Claude/otra IA pueda auditar una única rama `main`. No equivale a QA funcional completo ni a release estable.
 
-- `docs/changes/2026-08-31-landings-module.md`;
-- `docs/decisions/ADR-0002-landings-cpt-native-forms.md`.
+Leer obligatoriamente `docs/AUDIT-HANDOFF-2026-08-31.md` antes de emitir conclusiones de auditoría.
 
 ## 6. Arquitectura objetivo
 
@@ -111,7 +117,7 @@ Tres modos principales:
 - **Híbrido:** HUB controla Header/Footer y/o bloques; Elementor puede continuar en contenido.
 - **HUB:** HUB controla la página completa y puede descargar Elementor en esa URL.
 
-Las **Landings HUB** son un caso especializado de modo HUB: WordPress mantiene el objeto/publicación/SEO, pero Constructor HUB renderiza todo el cuerpo visual.
+Las **Landings HUB** son un caso especializado de modo HUB: WordPress mantiene el objeto/publicación/SEO, pero Constructor HUB renderiza el cuerpo visual según el modo configurado.
 
 A futuro puede existir **HUB Tibox Theme**, pero debe ser opcional.
 
@@ -125,20 +131,22 @@ Por lo tanto:
 - endpoints específicos pertenecen a adapters/bridges;
 - formularios base deben ser genéricos;
 - URLs/privacidad deben ser filtrables/configurables;
-- no asumir Hello Elementor como theme obligatorio.
+- no asumir Hello Elementor como theme obligatorio;
+- transporte de correo debe pasar por WordPress (`wp_mail`) y no acoplar el core a SendGrid.
 
 ## 8. Reglas para IA
 
 Antes de modificar código:
 
 1. leer este archivo;
-2. leer `ARCHITECTURE.md`;
-3. leer `DEVELOPMENT-PROTOCOL.md`;
-4. revisar las últimas entradas de `CHANGELOG.md`;
-5. revisar `ROADMAP.md`;
-6. confirmar la rama actual y el estado de `main`;
-7. revisar PRs abiertos y ramas apiladas;
-8. revisar el código real antes de asumir que una conversación antigua sigue vigente.
+2. leer `AUDIT-HANDOFF-2026-08-31.md` si la tarea es auditoría/revisión;
+3. leer `ARCHITECTURE.md`;
+4. leer `DEVELOPMENT-PROTOCOL.md`;
+5. revisar las últimas entradas de `CHANGELOG.md`;
+6. revisar `ROADMAP.md`;
+7. confirmar la rama actual y el estado de `main`;
+8. revisar PRs/commits recientes;
+9. revisar el código real antes de asumir que una conversación antigua sigue vigente.
 
 Al modificar:
 
@@ -149,7 +157,7 @@ Al modificar:
 - mantener compatibilidad con SEO/hooks WordPress;
 - cargar assets solo donde corresponden;
 - documentar decisiones y compatibilidad;
-- no mergear features que aún requieren QA real si el riesgo frontend es alto.
+- no considerar `main` v0.4 como release estable hasta cerrar auditoría y QA.
 
 ## 9. Regla de documentación
 
@@ -168,10 +176,13 @@ Todo cambio significativo debe dejar trazabilidad mínima:
 
 La fuente principal es `docs/CHANGELOG.md` y, para decisiones estructurales, `docs/decisions/`.
 
+Los commits exclusivamente documentales quedan auditables mediante Git y no generan una cadena recursiva de auto-documentación.
+
 ## 10. Documentos que son fuente de verdad
 
 - `README.md`: resumen público del proyecto.
 - `docs/START-HERE-AI.md`: onboarding/contexto.
+- `docs/AUDIT-HANDOFF-2026-08-31.md`: estado consolidado y alcance de auditoría actual.
 - `docs/ARCHITECTURE.md`: arquitectura vigente y objetivo.
 - `docs/DEVELOPMENT-PROTOCOL.md`: reglas para trabajar.
 - `docs/CHANGELOG.md`: historial técnico.
