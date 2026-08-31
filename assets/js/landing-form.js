@@ -17,7 +17,6 @@
     const formToObject = (form) => {
         const result = {};
         const data = new FormData(form);
-
         for (const [key, value] of data.entries()) {
             if (Object.prototype.hasOwnProperty.call(result, key)) {
                 result[key] = Array.isArray(result[key]) ? result[key] : [result[key]];
@@ -26,7 +25,6 @@
                 result[key] = value;
             }
         }
-
         return result;
     };
 
@@ -49,19 +47,21 @@
 
         form.addEventListener('submit', async (event) => {
             event.preventDefault();
-
             if (!form.reportValidity()) return;
 
             const submit = form.querySelector('button[type="submit"], input[type="submit"]');
             const originalText = submit && submit.tagName === 'BUTTON' ? submit.innerHTML : '';
             const fields = formToObject(form);
+            const landingUrl = config.landingUrl || window.location.href.split('#')[0];
 
             const payload = {
                 ...fields,
                 landing_id: Number(fields.landing_id || config.landingId || 0),
+                form_id: String(fields.form_id || form.id || `hub-landing-${config.landingId || 0}`),
                 submission_id: submissionId(),
                 privacy: isConsentValue(fields.privacy),
-                landing_url: config.landingUrl || window.location.href.split('#')[0],
+                landing_url: landingUrl,
+                landing_path: window.location.pathname || '',
                 page_title: config.pageTitle || document.title,
                 utm_source: query.get('utm_source') || '',
                 utm_medium: query.get('utm_medium') || '',
@@ -97,18 +97,14 @@
                     throw new Error(firstError || result.message || 'No fue posible enviar el formulario.');
                 }
 
-                setStatus(
-                    form,
-                    result.message || config.successMessage || 'Gracias. Recibimos tus datos.',
-                    'success'
-                );
+                setStatus(form, result.message || config.successMessage || 'Gracias. Recibimos tus datos.', 'success');
                 form.reset();
 
                 if (result.lead_created) {
                     window.dataLayer = window.dataLayer || [];
                     window.dataLayer.push({
                         event: config.eventName || 'form_submit',
-                        form_id: `hub-landing-${payload.landing_id}`,
+                        form_id: payload.form_id,
                         landing_id: payload.landing_id,
                         submission_id: result.submission_id || payload.submission_id,
                         source: 'constructor_hub_landing',
