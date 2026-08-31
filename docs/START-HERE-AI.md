@@ -1,6 +1,6 @@
 # START HERE — contexto para IA y nuevos colaboradores
 
-Última revisión base: 2026-08-28.
+Última revisión: **2026-08-31**.
 
 Este documento es el punto de entrada obligatorio para cualquier IA o persona que trabaje en **Constructor HUB Tibox**.
 
@@ -16,7 +16,7 @@ La visión es que WordPress administre contenido, medios, SEO, integraciones y d
 
 ### tibox.cl
 
-Actualmente WordPress + Hello Elementor + Elementor. Se desea comenzar reemplazando Header y Footer, luego bloques y finalmente páginas completas.
+WordPress + Hello Elementor + Elementor. La transición comienza con Header/Footer, Landings y páginas de prueba, sin cambiar el theme productivo.
 
 ### prodata.cl
 
@@ -26,7 +26,7 @@ WordPress + Elementor. Debe seguir usando su theme actual inicialmente. La misma
 
 Repositorio relacionado: `wladimick/Cloud-tibox`.
 
-Cloud-tibox demostró varios conceptos que deben reutilizarse conceptualmente:
+Cloud-tibox demostró conceptos que deben reutilizarse conceptualmente:
 
 - WordPress como backend;
 - frontend propio;
@@ -52,45 +52,80 @@ Por compatibilidad todavía existen nombres históricos como:
 - carpeta/plantilla `home-ai`;
 - clases CSS `tbx-ai-*`.
 
-No asumir que esos nombres representan la arquitectura final. Deben migrarse gradualmente y con compatibilidad, nunca mediante un cambio destructivo improvisado.
+No asumir que esos nombres representan la arquitectura final. Deben migrarse gradualmente y con compatibilidad.
 
-## 5. Estado funcional del MVP
+## 5. Estado funcional actual
 
-Hoy existe una prueba de página completa que puede:
+### Baseline en `main`
 
-- activarse por página mediante metabox;
-- reemplazar el template del theme para esa página;
-- mantener `wp_head()`, `wp_body_open()` y `wp_footer()`;
-- cargar CSS/JS propios;
-- reducir assets de Elementor;
-- renderizar una home de prueba;
-- enviar un formulario a un endpoint REST existente de Tibox.
+`main` conserva la fundación v0.2.0 y la documentación base.
 
-Esto es un prototipo y no es todavía el modelo definitivo de componentes.
+### Rama `feat/hybrid-header-footer`
 
-## 6. Próximo objetivo funcional
+Implementa:
 
-La prioridad posterior a la formalización documental es construir el **sistema global de Header/Footer HUB** sin requerir reemplazar el contenido Elementor de una página.
+- CPT `hub_component`;
+- Header/Footer HUB;
+- HTML/CSS/JS separados;
+- configuración de componentes activos;
+- renderer híbrido `Header HUB + the_content() + Footer HUB`;
+- CI PHP/JavaScript;
+- ejemplo Header/Footer Tibox 2026;
+- build beta `0.3.0-beta.1`.
 
-Objetivo esperado:
+Esta rama todavía requiere QA WordPress antes de merge.
 
-```text
-Header: HUB
-Contenido: theme/Elementor actual
-Footer: HUB
-```
+### Rama `feat/landings-module`
 
-Debe ser reversible y configurable.
+Rama apilada sobre `feat/hybrid-header-footer`.
 
-## 7. Arquitectura objetivo
+Implementa **Landings HUB**:
 
-Tres modos:
+- menú `Constructor HUB → Landings`;
+- CPT público `hub_landing`;
+- editor HTML/CSS/JS;
+- template full-page sin render Elementor;
+- canvas independiente o Header/Footer HUB;
+- variables dinámicas;
+- `{{HUB_FORM}}`;
+- formularios IA custom con `data-hub-landing-form`;
+- endpoint `POST /wp-json/constructor-hub/v1/landing-submit`;
+- CPT privado `hub_landing_lead` y menú `Envíos Landings`;
+- `wp_mail` por landing;
+- UTMs/GCLID/GBRAID/WBRAID;
+- honeypot, rate limit e idempotencia;
+- evento `dataLayer` `form_submit`;
+- hook `constructor_hub_landing_lead_created`;
+- ejemplo `examples/landing-starter/`.
+
+Leer:
+
+- `docs/changes/2026-08-31-landings-module.md`;
+- `docs/decisions/ADR-0002-landings-cpt-native-forms.md`.
+
+## 6. Arquitectura objetivo
+
+Tres modos principales:
 
 - **Legacy:** theme + Elementor controlan la página; HUB puede insertar componentes puntuales.
 - **Híbrido:** HUB controla Header/Footer y/o bloques; Elementor puede continuar en contenido.
 - **HUB:** HUB controla la página completa y puede descargar Elementor en esa URL.
 
+Las **Landings HUB** son un caso especializado de modo HUB: WordPress mantiene el objeto/publicación/SEO, pero Constructor HUB renderiza todo el cuerpo visual.
+
 A futuro puede existir **HUB Tibox Theme**, pero debe ser opcional.
+
+## 7. Regla multi-sitio
+
+El core debe servir para Tibox, Prodata y futuros clientes.
+
+Por lo tanto:
+
+- branding pertenece a Design System/componentes, no al core;
+- endpoints específicos pertenecen a adapters/bridges;
+- formularios base deben ser genéricos;
+- URLs/privacidad deben ser filtrables/configurables;
+- no asumir Hello Elementor como theme obligatorio.
 
 ## 8. Reglas para IA
 
@@ -102,7 +137,8 @@ Antes de modificar código:
 4. revisar las últimas entradas de `CHANGELOG.md`;
 5. revisar `ROADMAP.md`;
 6. confirmar la rama actual y el estado de `main`;
-7. revisar el código real antes de asumir que una conversación antigua sigue vigente.
+7. revisar PRs abiertos y ramas apiladas;
+8. revisar el código real antes de asumir que una conversación antigua sigue vigente.
 
 Al modificar:
 
@@ -112,7 +148,8 @@ Al modificar:
 - no hacer depender el core de un theme específico;
 - mantener compatibilidad con SEO/hooks WordPress;
 - cargar assets solo donde corresponden;
-- documentar decisiones y compatibilidad.
+- documentar decisiones y compatibilidad;
+- no mergear features que aún requieren QA real si el riesgo frontend es alto.
 
 ## 9. Regla de documentación
 
@@ -129,7 +166,7 @@ Todo cambio significativo debe dejar trazabilidad mínima:
 - QA realizado;
 - siguiente paso si quedó deuda técnica.
 
-La fuente principal de esta trazabilidad es `docs/CHANGELOG.md` y, para decisiones estructurales, `docs/decisions/`.
+La fuente principal es `docs/CHANGELOG.md` y, para decisiones estructurales, `docs/decisions/`.
 
 ## 10. Documentos que son fuente de verdad
 
@@ -141,6 +178,8 @@ La fuente principal de esta trazabilidad es `docs/CHANGELOG.md` y, para decision
 - `docs/ROADMAP.md`: fases y pendientes.
 - `docs/CLOUD-TIBOX-RELATION.md`: relación/reutilización conceptual de Cloud-tibox.
 - `docs/SITE-ADAPTERS.md`: reglas para particularidades Tibox, Prodata y futuros sitios.
+- `docs/changes/`: implementación detallada por fecha/feature.
+- `docs/qa/`: evidencia de validaciones.
 - `docs/decisions/`: Architecture Decision Records (ADR).
 
 Si la documentación contradice el código, verificar el historial reciente y corregir la documentación en el mismo cambio.
