@@ -7,11 +7,47 @@
 
     const query = new URLSearchParams(window.location.search);
 
-    const submissionId = () => {
+    const newId = () => {
         if (window.crypto && typeof window.crypto.randomUUID === 'function') {
             return window.crypto.randomUUID();
         }
         return `hub-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    };
+
+    /**
+     * The submission id has to survive a retry, otherwise the server side
+     * deduplication never fires: a request that reached the server but whose
+     * response was lost would create a second lead and a second Ads conversion.
+     * It is rotated only after a confirmed success.
+     */
+    const submissionIdFor = (form) => {
+        const key = `hub-submission-${config.landingId || 0}-${form.id || form.name || 'default'}`;
+
+        try {
+            const stored = window.sessionStorage.getItem(key);
+            if (stored) {
+                return stored;
+            }
+            const created = newId();
+            window.sessionStorage.setItem(key, created);
+            return created;
+        } catch (error) {
+            // Private mode, or storage disabled. One id per page load is still
+            // better than one per click.
+            if (!form.dataset.hubSubmissionId) {
+                form.dataset.hubSubmissionId = newId();
+            }
+            return form.dataset.hubSubmissionId;
+        }
+    };
+
+    const rotateSubmissionId = (form) => {
+        const key = `hub-submission-${config.landingId || 0}-${form.id || form.name || 'default'}`;
+        try {
+            window.sessionStorage.removeItem(key);
+        } catch (error) {
+            delete form.dataset.hubSubmissionId;
+        }
     };
 
     const formToObject = (form) => {
@@ -58,7 +94,8 @@
                 ...fields,
                 landing_id: Number(fields.landing_id || config.landingId || 0),
                 form_id: String(fields.form_id || form.id || `hub-landing-${config.landingId || 0}`),
-                submission_id: submissionId(),
+                submission_id: submissionIdFor(form),
+                hub_token: fields.hub_token || config.formToken || '',
                 privacy: isConsentValue(fields.privacy),
                 landing_url: landingUrl,
                 landing_path: window.location.pathname || '',
@@ -98,6 +135,7 @@
                 }
 
                 setStatus(form, result.message || config.successMessage || 'Gracias. Recibimos tus datos.', 'success');
+                rotateSubmissionId(form);
                 form.reset();
 
                 if (result.lead_created) {

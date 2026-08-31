@@ -6,6 +6,74 @@ Formato requerido desde 2026-08-28: **fecha · rama · commit · objetivo · imp
 
 ---
 
+## 2026-08-31 — Fase 3: landings y formularios
+
+Rama: `feat/hub-v0.5-refundacion`.
+Estado: **implementado / QA WordPress pendiente**.
+
+Documento de contrato: [`FORMS-AND-TRACKING.md`](FORMS-AND-TRACKING.md).
+
+### Objetivo
+
+Convertir el pipeline de formularios en algo operable: antispam que no bloquee
+a visitantes legítimos, correo que no cuelgue la respuesta ni falle en silencio,
+y leads que se puedan exportar, borrar y convertir en conversiones de Ads.
+
+### Cambios
+
+- **`HUB_Tibox_Antispam`**: token firmado por HMAC embebido en cada formulario
+  (compatible con caché de página, caduca a las 12 horas), tiempo mínimo de
+  envío y filtro `constructor_hub_antispam_check` para conectar reCAPTCHA o
+  Turnstile como adaptador. El honeypot sigue respondiendo éxito para no
+  enseñarle al bot que fue detectado.
+- **Idempotencia real (MED-01)**: el `submission_id` se guarda en
+  `sessionStorage` y se reutiliza en los reintentos; solo se rota tras un éxito
+  confirmado.
+- **Colisión de clave única (MED-02)**: dos peticiones con el mismo
+  `submission_id` devuelven el lead existente en lugar de un 500.
+- **Correo encolado**: `wp_schedule_single_event` saca el SMTP del request del
+  formulario, con envío en línea como respaldo si no hay cron. Nueva tabla
+  `wp_hub_mail_log` y pantalla **Correo enviado** con el resultado de cada envío;
+  se acabó el `error_log` como único canal.
+- **Evidencia de consentimiento**: `consent_at`, `consent_url`,
+  `consent_version` e `ip_hash` por lead.
+- **Privacidad**: exportador y borrador registrados en las herramientas de
+  WordPress, borrado individual desde el admin y retención automática
+  configurable en meses.
+- **Exportación**: CSV de leads y CSV de conversiones offline de Google Ads a
+  partir de `gclid`/`gbraid`/`wbraid`, con marca de exportado para no contar dos
+  veces la misma conversión. Los valores que empiezan por `=`, `+`, `-` o `@` se
+  neutralizan para que un mensaje de un visitante no se ejecute como fórmula al
+  abrir el CSV.
+- **Estado comercial por lead**: nuevo, calificado, ganado, perdido, con valor.
+- El runtime del formulario se encola solo en páginas que contienen un
+  formulario HUB, venga de `{{HUB_FORM}}` o de markup escrito por una IA.
+
+### Archivos principales
+
+`includes/class-hub-antispam.php`, `class-hub-mail-log.php`,
+`class-hub-lead-privacy.php`, `class-hub-leads-export.php`,
+`class-hub-landing-lead-store.php`, `class-hub-landing-mailer.php`,
+`class-hub-landing-forms.php`, `assets/js/landing-form.js`,
+`docs/FORMS-AND-TRACKING.md`.
+
+### Compatibilidad y riesgos
+
+- La tabla de leads sube a la versión de esquema `3.0.0`; `dbDelta` añade las
+  columnas nuevas sin tocar las existentes.
+- El token de formulario se exige por defecto. Un formulario servido desde una
+  caché de más de 12 horas devolverá "vuelve a cargar la página": el filtro
+  `constructor_hub_enforce_form_token` permite desactivarlo mientras se ajusta
+  la caché.
+
+### QA
+
+PHPCS y PHPStan nivel 5 sin errores. Pendiente: prueba de entrega real por
+SendGrid, verificación del `dataLayer` en GTM y una importación de conversiones
+en una cuenta de Google Ads real.
+
+---
+
 ## 2026-08-31 — Fase 2: componentes y Design System
 
 Rama: `feat/hub-v0.5-refundacion`.

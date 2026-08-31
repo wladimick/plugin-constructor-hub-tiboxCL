@@ -226,6 +226,31 @@ final class HUB_Tibox_Settings_Page
                         </td>
                     </tr>
                     <tr>
+                        <th scope="row"><label for="hub-retention">Retención de leads</label></th>
+                        <td>
+                            <input id="hub-retention" type="number" min="0" step="1" class="small-text"
+                                   name="hub_lead_retention_months"
+                                   value="<?php echo esc_attr((string) (int) get_option('hub_tibox_lead_retention_months', 0)); ?>"> meses
+                            <p class="description">
+                                0 = sin borrado automático. Guardar datos personales indefinidamente porque nadie eligió
+                                un plazo también es una decisión, y la equivocada. Los leads más antiguos se eliminan a
+                                diario.
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="hub-ads-conversion">Conversión de Google Ads</label></th>
+                        <td>
+                            <input id="hub-ads-conversion" class="regular-text" name="hub_ads_conversion_name"
+                                   value="<?php echo esc_attr((string) get_option('hub_tibox_ads_conversion_name', 'Lead calificado HUB')); ?>">
+                            <input class="small-text" name="hub_ads_currency"
+                                   value="<?php echo esc_attr((string) get_option('hub_tibox_ads_currency', 'CLP')); ?>">
+                            <p class="description">
+                                Nombre de la acción de conversión offline y moneda, tal como están definidos en Google Ads.
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
                         <th scope="row">Elementor</th>
                         <td>
                             <label>
@@ -277,6 +302,19 @@ final class HUB_Tibox_Settings_Page
 
         update_option(HUB_Tibox_Landing_Forms::OPTION_IP_HEADER, (string) $header, false);
         update_option('hub_tibox_elementor_design_support', isset($_POST['hub_elementor_design_support']) ? '1' : '0', false);
+
+        $retention = isset($_POST['hub_lead_retention_months']) ? absint($_POST['hub_lead_retention_months']) : 0;
+        update_option('hub_tibox_lead_retention_months', $retention, false);
+
+        $conversion = isset($_POST['hub_ads_conversion_name'])
+            ? sanitize_text_field(wp_unslash($_POST['hub_ads_conversion_name']))
+            : '';
+        update_option('hub_tibox_ads_conversion_name', $conversion, false);
+
+        $currency = isset($_POST['hub_ads_currency'])
+            ? strtoupper(preg_replace('/[^A-Za-z]/', '', sanitize_text_field(wp_unslash($_POST['hub_ads_currency']))) ?? '')
+            : '';
+        update_option('hub_tibox_ads_currency', $currency !== '' ? $currency : 'CLP', false);
 
         wp_safe_redirect(add_query_arg(['page' => 'constructor-hub-settings', 'updated' => '1'], admin_url('admin.php')));
         exit;

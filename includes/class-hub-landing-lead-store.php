@@ -13,7 +13,7 @@ if (!defined('ABSPATH')) {
  */
 final class HUB_Tibox_Landing_Lead_Store
 {
-    private const DB_VERSION = '2.0.0';
+    private const DB_VERSION = '3.0.0';
     private const DB_VERSION_OPTION = 'hub_tibox_landing_leads_db_version';
 
     private static ?self $instance = null;
@@ -90,12 +90,20 @@ final class HUB_Tibox_Landing_Lead_Store
             wbraid varchar(255) NOT NULL DEFAULT '',
             fields_json longtext NULL,
             tracking_json longtext NULL,
+            consent_at datetime NULL,
+            consent_url varchar(255) NOT NULL DEFAULT '',
+            consent_version varchar(60) NOT NULL DEFAULT '',
+            ip_hash char(64) NOT NULL DEFAULT '',
+            conversion_status varchar(30) NOT NULL DEFAULT 'new',
+            conversion_value decimal(12,2) NULL,
+            conversion_exported_at datetime NULL,
             PRIMARY KEY  (id),
             UNIQUE KEY submission_id (submission_id),
             KEY landing_id (landing_id),
             KEY legacy_landing_id (legacy_landing_id),
             KEY email (email),
-            KEY created_at (created_at)
+            KEY created_at (created_at),
+            KEY conversion_status (conversion_status)
         ) {$charset_collate};";
 
         dbDelta($sql);
@@ -182,10 +190,29 @@ final class HUB_Tibox_Landing_Lead_Store
             'wbraid' => sanitize_text_field((string) ($tracking['wbraid'] ?? $data['wbraid'] ?? '')),
             'fields_json' => wp_json_encode($fields, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'tracking_json' => wp_json_encode($tracking, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            // Consent evidence. Chile's Ley 21.719 and the GDPR both require
+            // being able to show *what* was accepted and *when*, not just a
+            // boolean. The IP is stored hashed: it proves origin without
+            // keeping an identifier in the clear.
+            'consent_at' => !empty($fields['privacy']) || !empty($data['privacy'])
+                ? sanitize_text_field((string) ($data['consent_at'] ?? current_time('mysql')))
+                : null,
+            'consent_url' => esc_url_raw((string) ($data['consent_url'] ?? '')),
+            'consent_version' => sanitize_text_field((string) ($data['consent_version'] ?? '')),
+            'ip_hash' => (string) ($data['ip_hash'] ?? ''),
+            'conversion_status' => sanitize_key((string) ($data['conversion_status'] ?? 'new')),
         ];
 
+        // The unique index on submission_id is the real guard: two concurrent
+        // requests carrying the same id must both end up reporting success,
+        // never a 500 that makes the visitor submit again.
         $inserted = $wpdb->insert($table, $row);
         if ($inserted === false) {
+            $existing = $this->find_by_submission_id($submission_id);
+            if ($existing > 0) {
+                return $existing;
+            }
+
             error_log('[Constructor HUB] Error guardando lead: ' . $wpdb->last_error);
             return 0;
         }
@@ -274,6 +301,197 @@ final class HUB_Tibox_Landing_Lead_Store
         ], false);
 
         return ['migrated' => $migrated, 'skipped' => $skipped, 'total' => count($rows)];
+    }
+
+
+    /**
+     * Rows for the admin listing and for exports.
+     *
+     * @param array<string,mixed> $args
+     * @return array<int,array<string,mixed>>
+     */
+    public function query(array $args = []): array
+    {
+        $this->maybe_install_table();
+
+        global $wpdb;
+        $table = $this->table_name();
+
+        $where = ['1=1'];
+        $params = [];
+
+        $landing_id = absint($args['landing_id'] ?? 0);
+        if ($landing_id > 0) {
+            $where[] = 'landing_id = %d';
+            $params[] = $landing_id;
+        }
+
+        $status = sanitize_key((string) ($args['conversion_status'] ?? ''));
+        if ($status !== '') {
+            $where[] = 'conversion_status = %s';
+            $params[] = $status;
+        }
+
+        if (!empty($args['with_gclid'])) {
+            $where[] = "(gclid <> '' OR gbraid <> '' OR wbraid <> '')";
+        }
+
+        $from = sanitize_text_field((string) ($args['from'] ?? ''));
+        if ($from !== '') {
+            $where[] = 'created_at >= %s';
+            $params[] = $from;
+        }
+
+        $limit = (int) ($args['limit'] ?? 50);
+        $limit = $limit > 0 ? min($limit, 5000) : 50;
+        $offset = max(0, (int) ($args['offset'] ?? 0));
+
+        $sql = 'SELECT * FROM ' . $table . ' WHERE ' . implode(' AND ', $where)
+            . ' ORDER BY created_at DESC, id DESC LIMIT %d OFFSET %d';
+        $params[] = $limit;
+        $params[] = $offset;
+
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $sql is assembled from literal fragments only; every value is a placeholder filled by prepare().
+        $rows = $wpdb->get_results($wpdb->prepare($sql, ...$params), ARRAY_A);
+
+        return is_array($rows) ? $rows : [];
+    }
+
+    /** @param array<string,mixed> $args */
+    public function count(array $args = []): int
+    {
+        $this->maybe_install_table();
+
+        global $wpdb;
+        $table = $this->table_name();
+
+        $where = ['1=1'];
+        $params = [];
+
+        $landing_id = absint($args['landing_id'] ?? 0);
+        if ($landing_id > 0) {
+            $where[] = 'landing_id = %d';
+            $params[] = $landing_id;
+        }
+
+        $sql = 'SELECT COUNT(*) FROM ' . $table . ' WHERE ' . implode(' AND ', $where);
+
+        if ($params === []) {
+            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- fully literal statement, no values involved.
+            return (int) $wpdb->get_var($sql);
+        }
+
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $sql is assembled from literal fragments only; every value is a placeholder filled by prepare().
+        return (int) $wpdb->get_var($wpdb->prepare($sql, ...$params));
+    }
+
+    /** @return array<string,mixed>|null */
+    public function get(int $lead_id): ?array
+    {
+        global $wpdb;
+        $table = $this->table_name();
+        $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table} WHERE id = %d", $lead_id), ARRAY_A);
+
+        return is_array($row) ? $row : null;
+    }
+
+    public function delete(int $lead_id): bool
+    {
+        global $wpdb;
+
+        return $wpdb->delete($this->table_name(), ['id' => $lead_id], ['%d']) > 0;
+    }
+
+    /** @return array<int,array<string,mixed>> */
+    public function find_by_email(string $email): array
+    {
+        $email = sanitize_email($email);
+        if ($email === '') {
+            return [];
+        }
+
+        global $wpdb;
+        $table = $this->table_name();
+        $rows = $wpdb->get_results(
+            $wpdb->prepare("SELECT * FROM {$table} WHERE email = %s ORDER BY id ASC", $email),
+            ARRAY_A
+        );
+
+        return is_array($rows) ? $rows : [];
+    }
+
+    public function delete_by_email(string $email): int
+    {
+        $email = sanitize_email($email);
+        if ($email === '') {
+            return 0;
+        }
+
+        global $wpdb;
+
+        return (int) $wpdb->delete($this->table_name(), ['email' => $email], ['%s']);
+    }
+
+    /**
+     * Marks a lead as exported to Google Ads so it is not counted twice.
+     */
+    public function mark_conversion_exported(int $lead_id): void
+    {
+        global $wpdb;
+        $wpdb->update(
+            $this->table_name(),
+            ['conversion_exported_at' => current_time('mysql')],
+            ['id' => $lead_id],
+            ['%s'],
+            ['%d']
+        );
+    }
+
+    public function set_conversion_status(int $lead_id, string $status, ?float $value = null): void
+    {
+        $allowed = ['new', 'qualified', 'won', 'lost'];
+        $status = in_array($status, $allowed, true) ? $status : 'new';
+
+        $data = ['conversion_status' => $status];
+        $format = ['%s'];
+
+        if ($value !== null) {
+            $data['conversion_value'] = $value;
+            $format[] = '%f';
+        }
+
+        global $wpdb;
+        $wpdb->update($this->table_name(), $data, ['id' => $lead_id], $format, ['%d']);
+    }
+
+    /**
+     * Deletes leads older than the retention window.
+     *
+     * Keeping personal data forever because nobody chose a limit is itself a
+     * decision, and the wrong one. Retention is off by default and configured
+     * in months.
+     */
+    public function purge_expired(): int
+    {
+        $months = (int) apply_filters(
+            'constructor_hub_lead_retention_months',
+            (int) get_option('hub_tibox_lead_retention_months', 0)
+        );
+
+        if ($months <= 0) {
+            return 0;
+        }
+
+        $this->maybe_install_table();
+
+        global $wpdb;
+        $table = $this->table_name();
+        $cutoff = gmdate('Y-m-d H:i:s', strtotime('-' . $months . ' months', (int) current_time('timestamp', true)));
+
+        return (int) $wpdb->query($wpdb->prepare(
+            "DELETE FROM {$table} WHERE created_at < %s",
+            $cutoff
+        ));
     }
 
     private function resolve_migrated_landing_id(int $legacy_landing_id): int

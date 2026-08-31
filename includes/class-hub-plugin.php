@@ -34,6 +34,9 @@ final class HUB_Tibox_Plugin
         // Always available: storage, forms, mail and migration tooling do not
         // depend on which design layer is active.
         HUB_Tibox_Landing_Lead_Store::instance();
+        HUB_Tibox_Lead_Privacy::instance();
+        HUB_Tibox_Leads_Export::instance();
+        HUB_Tibox_Mail_Log::instance();
         HUB_Tibox_Landing_Mailer::instance();
         HUB_Tibox_Landing_Forms::instance();
         HUB_Tibox_Landing_Zip_Importer::instance();

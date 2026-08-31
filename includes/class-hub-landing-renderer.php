@@ -109,7 +109,8 @@ final class HUB_Tibox_Landing_Renderer
             'landingId' => $landing_id,
             'landingUrl' => esc_url_raw(get_permalink($landing_id)),
             'pageTitle' => sanitize_text_field(wp_get_document_title()),
-            'successMessage' => $this->landings->get_success_message($landing_id),
+            'successMessage' => HUB_Tibox_Form_Config::success_message($landing_id),
+            'formToken' => HUB_Tibox_Antispam::issue_token($landing_id),
             'eventName' => 'form_submit',
         ]);
     }

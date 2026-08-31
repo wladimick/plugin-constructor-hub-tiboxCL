@@ -59,6 +59,7 @@ final class HUB_Tibox_Upgrade
         HUB_Tibox_Capabilities::grant();
         HUB_Tibox_Version_Store::instance()->maybe_install_table();
         HUB_Tibox_Landing_Lead_Store::instance()->maybe_install_table();
+        HUB_Tibox_Mail_Log::instance()->maybe_install_table();
 
         if (!self::is_unified()) {
             $result = $this->migrate_legacy_designs();

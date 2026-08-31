@@ -18,6 +18,8 @@ final class HUB_Tibox_Render
     /** @var array<int,int> Designs already rendered on this request, and how often. */
     private array $rendered = [];
 
+    private bool $form_runtime_enqueued = false;
+
     public static function instance(): self
     {
         if (self::$instance === null) {
@@ -34,6 +36,7 @@ final class HUB_Tibox_Render
         add_filter('body_class', [$this, 'body_class']);
 
         add_action('wp', [$this, 'prepare_request_assets']);
+        add_action('wp_enqueue_scripts', [$this, 'enqueue_base_styles'], 5);
         add_action('wp_body_open', [$this, 'inject_header_region'], 5);
         add_action('wp_footer', [$this, 'inject_footer_region'], 5);
         add_action('wp_head', [$this, 'print_region_hide_rules'], 100);
@@ -75,6 +78,7 @@ final class HUB_Tibox_Render
         ]);
 
         $this->ensure_assets($design_id, $version);
+        $this->maybe_enqueue_form_runtime($html, (int) ($args['form_target'] ?? $design_id));
         $this->rendered[$design_id] = ($this->rendered[$design_id] ?? 0) + 1;
 
         $type = HUB_Tibox_Design::get_type($design_id);
@@ -163,6 +167,21 @@ final class HUB_Tibox_Render
                 $this->preload_assets($design_id);
             }
         }
+    }
+
+    /** Structural styles only. Visual design belongs to each design package. */
+    public function enqueue_base_styles(): void
+    {
+        if (is_admin() || (!$this->is_hub_document() && !is_singular(HUB_Tibox_Design::POST_TYPE))) {
+            return;
+        }
+
+        wp_enqueue_style(
+            'constructor-hub-base',
+            TIBOX_AI_FRONTEND_URL . 'assets/css/landing-base.css',
+            [],
+            TIBOX_AI_FRONTEND_VERSION
+        );
     }
 
     public function template_include(string $template): string
@@ -324,6 +343,37 @@ final class HUB_Tibox_Render
     public function current_design_id(): int
     {
         return is_singular(HUB_Tibox_Design::POST_TYPE) ? get_queried_object_id() : 0;
+    }
+
+    /**
+     * The form runtime only loads on pages that actually contain a HUB form,
+     * whether it came from {{HUB_FORM}} or from markup an AI wrote by hand.
+     */
+    private function maybe_enqueue_form_runtime(string $html, int $host_id): void
+    {
+        if ($this->form_runtime_enqueued || !str_contains($html, 'data-hub-landing-form')) {
+            return;
+        }
+
+        $this->form_runtime_enqueued = true;
+
+        wp_enqueue_script(
+            'constructor-hub-landing-form',
+            TIBOX_AI_FRONTEND_URL . 'assets/js/landing-form.js',
+            [],
+            TIBOX_AI_FRONTEND_VERSION,
+            true
+        );
+
+        wp_localize_script('constructor-hub-landing-form', 'HubLandingFormConfig', [
+            'endpoint' => esc_url_raw(HUB_Tibox_Landing_Forms::instance()->endpoint_url()),
+            'landingId' => $host_id,
+            'landingUrl' => esc_url_raw((string) get_permalink($host_id)),
+            'pageTitle' => sanitize_text_field(wp_get_document_title()),
+            'successMessage' => HUB_Tibox_Form_Config::success_message($host_id),
+            'formToken' => HUB_Tibox_Antispam::issue_token($host_id),
+            'eventName' => 'form_submit',
+        ]);
     }
 
     private function preload_assets(int $design_id): void

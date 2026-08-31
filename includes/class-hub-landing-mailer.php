@@ -27,11 +27,14 @@ final class HUB_Tibox_Landing_Mailer
         return self::$instance;
     }
 
+    public const CRON_HOOK = 'constructor_hub_send_lead_mail';
+
     private function __construct()
     {
         add_action('admin_menu', [$this, 'add_settings_page']);
         add_action('admin_post_hub_tibox_save_mail_settings', [$this, 'save_settings']);
         add_action('admin_post_hub_tibox_send_test_mail', [$this, 'send_test_mail']);
+        add_action(self::CRON_HOOK, [$this, 'deliver_queued'], 10, 2);
     }
 
     public function add_settings_page(): void
@@ -174,6 +177,8 @@ final class HUB_Tibox_Landing_Mailer
      */
     public function send_lead_notifications(int $landing_id, int $lead_id, array $fields, array $tracking): void
     {
+        $jobs = [];
+
         $recipients = $this->recipients_for_landing($landing_id);
         if ($recipients !== []) {
             $subject = sprintf(
@@ -181,46 +186,85 @@ final class HUB_Tibox_Landing_Mailer
                 wp_specialchars_decode(get_the_title($landing_id) ?: 'Landing', ENT_QUOTES)
             );
 
-            $headers = ['Content-Type: text/html; charset=UTF-8'];
-            $email = sanitize_email((string) ($fields['email'] ?? ''));
-            if ($email !== '' && is_email($email)) {
-                // Only the address goes in the header. A display name is
-                // attacker controlled and `Juan <otro@dominio.cl>, Juan` would
-                // add a second recipient to every reply.
-                $headers[] = sprintf('Reply-To: <%s>', $email);
-            }
-
-            $sent = wp_mail(
-                $recipients,
-                $subject,
-                $this->build_internal_body($landing_id, $lead_id, $fields, $tracking),
-                $headers
-            );
-
-            if (!$sent) {
-                error_log(sprintf('[Constructor HUB] wp_mail interno falló. Lead ID: %d', $lead_id));
-            }
-        }
-
-        if (!$this->confirmation_enabled_for_landing($landing_id)) {
-            return;
+            $jobs[] = [
+                'kind' => 'internal',
+                'to' => $recipients,
+                'subject' => $subject,
+                'body' => $this->build_internal_body($landing_id, $lead_id, $fields, $tracking),
+                'reply_to' => sanitize_email((string) ($fields['email'] ?? '')),
+            ];
         }
 
         $email = sanitize_email((string) ($fields['email'] ?? ''));
-        if ($email === '' || !is_email($email)) {
+        if ($this->confirmation_enabled_for_landing($landing_id) && $email !== '' && is_email($email)) {
+            $jobs[] = [
+                'kind' => 'confirmation',
+                'to' => [$email],
+                'subject' => 'Solicitud recibida — ' . wp_specialchars_decode(get_bloginfo('name'), ENT_QUOTES),
+                'body' => $this->build_confirmation_body($landing_id, $fields),
+                'reply_to' => '',
+            ];
+        }
+
+        if ($jobs === []) {
             return;
         }
 
-        $sent = wp_mail(
-            $email,
-            'Solicitud recibida — ' . wp_specialchars_decode(get_bloginfo('name'), ENT_QUOTES),
-            $this->build_confirmation_body($landing_id, $fields),
-            ['Content-Type: text/html; charset=UTF-8']
-        );
+        $log = HUB_Tibox_Mail_Log::instance();
 
-        if (!$sent) {
-            error_log(sprintf('[Constructor HUB] wp_mail confirmación falló. Lead ID: %d', $lead_id));
+        foreach ($jobs as $job) {
+            $log_id = $log->record($lead_id, $landing_id, (string) $job['kind'], (array) $job['to'], (string) $job['subject']);
+
+            // The visitor should not wait for an SMTP round trip. Delivery is
+            // scheduled and the response returns immediately; if cron cannot
+            // run, the message is sent inline so nothing is silently lost.
+            $scheduled = wp_schedule_single_event(time() + 5, self::CRON_HOOK, [$log_id, $job]);
+
+            if ($scheduled === false || (defined('DISABLE_WP_CRON') && DISABLE_WP_CRON && !$this->has_external_cron())) {
+                $this->deliver_queued($log_id, $job);
+            }
         }
+    }
+
+    /**
+     * @param array<string,mixed> $job
+     */
+    public function deliver_queued(int $log_id, array $job): void
+    {
+        $to = array_filter(array_map('sanitize_email', (array) ($job['to'] ?? [])));
+        if ($to === []) {
+            return;
+        }
+
+        $headers = ['Content-Type: text/html; charset=UTF-8'];
+
+        $reply_to = sanitize_email((string) ($job['reply_to'] ?? ''));
+        if ($reply_to !== '' && is_email($reply_to)) {
+            // Address only: a display name is attacker controlled and could add
+            // a second recipient to every reply.
+            $headers[] = sprintf('Reply-To: <%s>', $reply_to);
+        }
+
+        $error = '';
+        $capture = static function (WP_Error $wp_error) use (&$error): void {
+            $error = $wp_error->get_error_message();
+        };
+        add_action('wp_mail_failed', $capture);
+
+        $sent = wp_mail($to, (string) ($job['subject'] ?? ''), (string) ($job['body'] ?? ''), $headers);
+
+        remove_action('wp_mail_failed', $capture);
+
+        HUB_Tibox_Mail_Log::instance()->mark(
+            $log_id,
+            $sent ? HUB_Tibox_Mail_Log::STATUS_SENT : HUB_Tibox_Mail_Log::STATUS_FAILED,
+            $sent ? '' : ($error !== '' ? $error : 'wp_mail() devolvió false sin detalle.')
+        );
+    }
+
+    private function has_external_cron(): bool
+    {
+        return (bool) apply_filters('constructor_hub_has_external_cron', false);
     }
 
     /** @return string[] */
