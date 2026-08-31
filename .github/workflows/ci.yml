@@ -1,0 +1,100 @@
+name: Constructor HUB CI
+
+on:
+  push:
+    branches:
+      - main
+      - 'feat/**'
+      - 'fix/**'
+      - 'refactor/**'
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  php-lint:
+    name: PHP syntax (${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.0', '8.3']
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+
+      - name: PHP lint
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' file; do
+            php -l "$file"
+          done < <(find . -type f -name '*.php' -not -path './vendor/*' -print0)
+
+  javascript-syntax:
+    name: JavaScript syntax
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: JavaScript syntax check
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' file; do
+            node --check "$file"
+          done < <(find . -type f -name '*.js' -not -path './node_modules/*' -print0)
+
+  package-beta:
+    name: Build installable plugin ZIP
+    runs-on: ubuntu-latest
+    needs:
+      - php-lint
+      - javascript-syntax
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create WordPress plugin package
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=$(grep -m1 '^ \* Version:' tibox-ai-frontend.php | sed 's/^ \* Version: *//')
+          # Compatibility: keep the historical folder name while installations
+          # of the MVP exist. This lets WordPress replace/update the same plugin
+          # instead of installing a second copy with duplicate classes.
+          PACKAGE_DIR="dist/tibox-ai-frontend"
+          mkdir -p "$PACKAGE_DIR"
+          rsync -a \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            --exclude='dist/' \
+            ./ "$PACKAGE_DIR/"
+          cd dist
+          zip -qr "constructor-hub-tibox-${VERSION}.zip" tibox-ai-frontend
+          echo "PACKAGE=dist/constructor-hub-tibox-${VERSION}.zip" >> "$GITHUB_ENV"
+          echo "ARTIFACT_NAME=constructor-hub-tibox-${VERSION}" >> "$GITHUB_ENV"
+
+      - name: Upload installable ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ env.PACKAGE }}
+          if-no-files-found: error
+          retention-days: 14

@@ -6,9 +6,75 @@ Formato requerido desde 2026-08-28: **fecha · rama · commit · objetivo · imp
 
 ---
 
+## 2026-08-28 — Header/Footer HUB híbridos
+
+Rama: `feat/hybrid-header-footer`.
+Baseline `main`: `3944fa9f37ee4fe897883abecae39dcc5656fea7`.
+Estado: en desarrollo / QA WordPress pendiente.
+
+Documento detallado: [`changes/2026-08-28-hybrid-header-footer.md`](changes/2026-08-28-hybrid-header-footer.md).
+
+### `b18b77535349db25807840fba287b1d81c58e8fe` — component manager
+
+- Añade CPT privado `hub_component`.
+- Tipos iniciales: Header y Footer.
+- Guarda HTML/CSS/JavaScript por separado.
+- Añade variables dinámicas iniciales.
+- Añade configuración de Header/Footer activos y alcance híbrido.
+
+### `61e8251c637e5e8d13bdffaebf4a1b0e8ddb2ae9` — renderer híbrido
+
+- Intercepta únicamente Pages configuradas.
+- Mantiene prioridad del MVP full-page histórico cuando está activo.
+- No descarga Elementor/theme assets en modo Híbrido.
+- Imprime CSS/JS de componentes mediante hooks WordPress.
+
+### `96c40fb0719648a07cb0de86d77d9b24b9f0d942` — template híbrido
+
+- Estructura: `wp_head()` → Header HUB → `the_content()` → Footer HUB → `wp_footer()`.
+- Permite que Elementor siga procesando el contenido central.
+
+### `713fb0cb2a8d874445a813c096de90b8a78cbe16` — wiring v0.3-dev
+
+- Integra Component Manager y Hybrid Renderer en bootstrap.
+- Versión de desarrollo `0.3.0-dev`.
+- Mantiene temporalmente core/nombres históricos del MVP.
+
+### `b8432516566b4544125964cda2e403ebd0df70b2` — CI
+
+- Añade GitHub Actions.
+- PHP syntax: 8.0 y 8.3.
+- JavaScript: `node --check`.
+
+### `53fb1e4d1725ac7f16a625b078b2882e7b9dbc98` — registro detallado
+
+- Documenta arquitectura del cambio, seguridad, compatibilidad, QA y pendientes.
+
+### Compatibilidad/riesgo
+
+- Modo desactivado por defecto.
+- Requiere Header y Footer publicados/seleccionados.
+- v0.3 inicial solo se aplica a Pages.
+- No cambia theme.
+- No desactiva Elementor.
+- Falta validar en un WordPress/Elementor real antes de merge.
+
+### Próximos pasos
+
+- validar CI;
+- crear PR draft;
+- probar en WordPress real;
+- agregar preview para administradores;
+- adapter Elementor para Header/Footer de Theme Builder;
+- primer Header/Footer Tibox como componentes de prueba.
+
+---
+
 ## 2026-08-28 — Formalización como Constructor HUB Tibox
 
-Rama: `feat/ai-frontend-mvp` (nombre histórico de la rama inicial; se conserva hasta cerrar el PR #1).
+Rama: `feat/ai-frontend-mvp` (nombre histórico de la rama inicial).
+PR: `#1`.
+Merge a `main`: `3944fa9f37ee4fe897883abecae39dcc5656fea7`.
 
 ### `8c7c5ff4d391f16f24a93e4109b6e7232c1279d5` — identidad del plugin
 
@@ -96,16 +162,16 @@ Rama: `feat/ai-frontend-mvp` (nombre histórico de la rama inicial; se conserva 
 - Archivo: `docs/architecture.md`.
 - El documento histórico queda como redirect hacia `docs/ARCHITECTURE.md` para evitar dos fuentes de verdad.
 
-### QA/documentación de esta formalización
+### `15d6c7c207801ddc78d8aa8299a94ffe447b43c9` — changelog base
+
+- Reconstruye historial del MVP y formalización.
+- Establece plantilla de trazabilidad futura.
+
+### Resultado
 
 - Repositorio renombrado verificado: `wladimick/plugin-constructor-hub-tiboxCL`.
-- PR #1 y rama histórica verificados tras el rename.
-- No se ha cambiado todavía el comportamiento de renderizado del MVP salvo identidad pública/versión.
-- No se ha hecho merge a `main`.
-
-### Siguiente paso
-
-Implementar **Header/Footer HUB globales en modo Híbrido** manteniendo contenido Elementor actual.
+- PR #1 mergeado sin squash para conservar commits individuales.
+- `main` pasa a ser una baseline documentada de Constructor HUB Tibox v0.2.0.
 
 ---
 
