@@ -104,13 +104,27 @@ final class HUB_Tibox_Landing_Renderer
             return;
         }
 
-        $css = trim($this->landings->get_css(get_queried_object_id()));
-        if ($css === '') {
+        $landing_id = get_queried_object_id();
+        $chunks = [];
+
+        if ($this->should_render_hub_chrome($landing_id)) {
+            $component_css = trim(HUB_Tibox_Component_Manager::instance()->get_active_css());
+            if ($component_css !== '') {
+                $chunks[] = "/* HUB Header/Footer */\n" . $component_css;
+            }
+        }
+
+        $landing_css = trim($this->landings->get_css($landing_id));
+        if ($landing_css !== '') {
+            $chunks[] = "/* HUB Landing */\n" . $landing_css;
+        }
+
+        if ($chunks === []) {
             return;
         }
 
         echo "\n<style id=\"constructor-hub-landing-css\">\n";
-        echo $css; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- trusted administrator-authored CSS.
+        echo implode("\n\n", $chunks); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- trusted administrator-authored CSS.
         echo "\n</style>\n";
     }
 
@@ -120,13 +134,27 @@ final class HUB_Tibox_Landing_Renderer
             return;
         }
 
-        $js = trim($this->landings->get_js(get_queried_object_id()));
-        if ($js === '') {
+        $landing_id = get_queried_object_id();
+        $chunks = [];
+
+        if ($this->should_render_hub_chrome($landing_id)) {
+            $component_js = trim(HUB_Tibox_Component_Manager::instance()->get_active_js());
+            if ($component_js !== '') {
+                $chunks[] = "/* HUB Header/Footer */\n" . $component_js;
+            }
+        }
+
+        $landing_js = trim($this->landings->get_js($landing_id));
+        if ($landing_js !== '') {
+            $chunks[] = "/* HUB Landing */\n" . $landing_js;
+        }
+
+        if ($chunks === []) {
             return;
         }
 
         echo "\n<script id=\"constructor-hub-landing-js\">\n";
-        echo $js; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- trusted administrator-authored JavaScript.
+        echo implode("\n\n", $chunks); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- trusted administrator-authored JavaScript.
         echo "\n</script>\n";
     }
 
