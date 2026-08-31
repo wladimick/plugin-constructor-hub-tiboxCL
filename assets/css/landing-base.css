@@ -1,0 +1,33 @@
+/* Constructor HUB — minimal structural styles only. Visual design belongs to each landing. */
+.hub-landing-root {
+    width: 100%;
+    min-height: 1px;
+}
+
+.hub-landing-form__honeypot {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+}
+
+.hub-landing-form__status:empty {
+    display: none;
+}
+
+.hub-landing-form__status[data-state="success"] {
+    display: block;
+}
+
+.hub-landing-form__status[data-state="error"] {
+    display: block;
+}
+
+.hub-landing-form[aria-busy="true"] {
+    cursor: progress;
+}
