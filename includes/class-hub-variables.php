@@ -68,16 +68,26 @@ final class HUB_Tibox_Variables
     }
 
     /**
-     * Resolve every registered variable for one context.
+     * Resolve registered variables for one context.
+     *
+     * `$only` restricts the work to the variables a piece of content actually
+     * uses. It matters: resolving everything meant rendering a full form and
+     * three navigation menus on every design render, whether or not the design
+     * referenced them.
      *
      * @param array<string,mixed> $context
+     * @param string[]|null       $only
      * @return array<string,string>
      */
-    public static function values(int $design_id = 0, array $context = []): array
+    public static function values(int $design_id = 0, array $context = [], ?array $only = null): array
     {
+        $wanted = static fn(string $name): bool => $only === null || in_array($name, $only, true);
+
         $queried_id = (int) ($context['page_id'] ?? get_queried_object_id());
-        $logo_id = (int) get_theme_mod('custom_logo', 0);
-        $thumbnail = $queried_id > 0 ? (string) get_the_post_thumbnail_url($queried_id, 'full') : '';
+        $logo_id = $wanted('CUSTOM_LOGO_URL') ? (int) get_theme_mod('custom_logo', 0) : 0;
+        $thumbnail = $wanted('FEATURED_IMAGE') && $queried_id > 0
+            ? (string) get_the_post_thumbnail_url($queried_id, 'full')
+            : '';
 
         $values = [
             'SITE_URL' => untrailingslashit(esc_url(home_url('/'))),
@@ -85,7 +95,9 @@ final class HUB_Tibox_Variables
             'SITE_NAME' => esc_html(get_bloginfo('name')),
             'SITE_DESCRIPTION' => esc_html(get_bloginfo('description')),
             'CURRENT_YEAR' => esc_html(wp_date('Y')),
-            'CUSTOM_LOGO' => has_custom_logo() ? (string) get_custom_logo() : esc_html(get_bloginfo('name')),
+            'CUSTOM_LOGO' => $wanted('CUSTOM_LOGO') && has_custom_logo()
+                ? (string) get_custom_logo()
+                : esc_html(get_bloginfo('name')),
             'CUSTOM_LOGO_URL' => $logo_id > 0 ? esc_url((string) wp_get_attachment_image_url($logo_id, 'full')) : '',
             'PRIVACY_URL' => esc_url((string) apply_filters(
                 'constructor_hub_privacy_url',
@@ -93,14 +105,14 @@ final class HUB_Tibox_Variables
                 $design_id
             )),
 
-            'MENU_PRIMARY' => self::menu('primary'),
-            'MENU_FOOTER' => self::menu('footer'),
-            'MENU_SECONDARY' => self::menu('secondary'),
+            'MENU_PRIMARY' => $wanted('MENU_PRIMARY') ? self::menu('primary') : '',
+            'MENU_FOOTER' => $wanted('MENU_FOOTER') ? self::menu('footer') : '',
+            'MENU_SECONDARY' => $wanted('MENU_SECONDARY') ? self::menu('secondary') : '',
 
             'PAGE_ID' => (string) $queried_id,
             'PAGE_TITLE' => $queried_id > 0 ? esc_html(get_the_title($queried_id)) : esc_html(get_bloginfo('name')),
             'PAGE_URL' => $queried_id > 0 ? esc_url((string) get_permalink($queried_id)) : esc_url(home_url('/')),
-            'PAGE_EXCERPT' => $queried_id > 0 ? esc_html(get_the_excerpt($queried_id)) : '',
+            'PAGE_EXCERPT' => $wanted('PAGE_EXCERPT') && $queried_id > 0 ? esc_html(get_the_excerpt($queried_id)) : '',
             'FEATURED_IMAGE' => esc_url($thumbnail),
 
             'DESIGN_ID' => (string) $design_id,
@@ -112,7 +124,9 @@ final class HUB_Tibox_Variables
             'HUB_FORM' => '',
         ];
 
-        if (class_exists('HUB_Tibox_Landing_Forms')) {
+        // Rendering the standard form also issues an anti spam token, so it is
+        // only built when the content asks for it.
+        if ($wanted('HUB_FORM') && class_exists('HUB_Tibox_Landing_Forms')) {
             $form_target = (int) ($context['form_target'] ?? ($design_id > 0 ? $design_id : $queried_id));
             $values['HUB_FORM'] = HUB_Tibox_Landing_Forms::instance()->render_default_form($form_target);
         }
@@ -125,7 +139,7 @@ final class HUB_Tibox_Variables
          * must also be declared through `constructor_hub_variable_registry` so
          * the import validator and the admin reference stay truthful.
          */
-        return (array) apply_filters('constructor_hub_variable_values', $values, $design_id, $context);
+        return (array) apply_filters('constructor_hub_variable_values', $values, $design_id, $context, $only);
     }
 
     /**
@@ -137,12 +151,35 @@ final class HUB_Tibox_Variables
             return $content;
         }
 
+        $used = self::used_in($content);
+        if ($used === []) {
+            return $content;
+        }
+
         $map = [];
-        foreach (self::values($design_id, $context) as $name => $value) {
+        foreach (self::values($design_id, $context, $used) as $name => $value) {
+            if (!in_array($name, $used, true)) {
+                continue;
+            }
+
             $map['{{' . $name . '}}'] = (string) $value;
         }
 
         return strtr($content, $map);
+    }
+
+    /**
+     * Variable names referenced by a piece of content.
+     *
+     * @return string[]
+     */
+    public static function used_in(string $content): array
+    {
+        if (!preg_match_all('/\{\{\s*([A-Z0-9_]+)\s*\}\}/', $content, $matches)) {
+            return [];
+        }
+
+        return array_values(array_unique($matches[1]));
     }
 
     /**
@@ -155,19 +192,7 @@ final class HUB_Tibox_Variables
      */
     public static function unknown_in(string $content): array
     {
-        if (!preg_match_all('/\{\{\s*([A-Z0-9_]+)\s*\}\}/', $content, $matches)) {
-            return [];
-        }
-
-        $known = self::names();
-        $unknown = [];
-        foreach ($matches[1] as $name) {
-            if (!in_array($name, $known, true)) {
-                $unknown[] = $name;
-            }
-        }
-
-        return array_values(array_unique($unknown));
+        return array_values(array_diff(self::used_in($content), self::names()));
     }
 
     private static function menu(string $location): string

@@ -6,15 +6,27 @@ Su objetivo es permitir que sitios WordPress existentes migren gradualmente desd
 
 Repositorio: `wladimick/plugin-constructor-hub-tiboxCL`
 
+> **Estado:** `0.5.0-dev` en la rama `feat/hub-v0.5-refundacion`.
+> La auditoría del 2026-08-31 derivó en una refundación del modelo de datos.
+> El código pasa PHPCS, PHPStan nivel 5 y los tests, pero **todavía no se ha
+> ejecutado en un WordPress real**: la Fase 7 del roadmap es QA y bloquea
+> cualquier release estable.
+
 ## Leer primero
 
 Toda persona o IA que vaya a trabajar en este repositorio debe comenzar por:
 
 1. [`docs/START-HERE-AI.md`](docs/START-HERE-AI.md)
 2. [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
-3. [`docs/DEVELOPMENT-PROTOCOL.md`](docs/DEVELOPMENT-PROTOCOL.md)
-4. [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
-5. [`docs/ROADMAP.md`](docs/ROADMAP.md)
+3. [`docs/decisions/`](docs/decisions/) — ADR-0003 y ADR-0004 cambiaron el modelo
+4. [`docs/DEVELOPMENT-PROTOCOL.md`](docs/DEVELOPMENT-PROTOCOL.md)
+5. [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
+6. [`docs/ROADMAP.md`](docs/ROADMAP.md)
+
+Para generar componentes con IA:
+[`docs/AI-PACKAGE-CONTRACT.md`](docs/AI-PACKAGE-CONTRACT.md).
+Para formularios y tracking:
+[`docs/FORMS-AND-TRACKING.md`](docs/FORMS-AND-TRACKING.md).
 
 La documentación es parte del producto. Un cambio de código que altere comportamiento, arquitectura, compatibilidad o flujo de trabajo debe quedar documentado.
 
@@ -26,40 +38,47 @@ Constructor HUB permite una transición por capas:
 
 ```text
 WordPress backend
-├── contenido / medios
-├── usuarios
+├── contenido / medios / usuarios
 ├── SEO / Rank Math
 ├── analítica / GTM
 └── Constructor HUB Tibox
-    ├── Componentes HUB
-    │   ├── Header
-    │   └── Footer
-    ├── Landings HUB
-    │   ├── HTML / CSS / JS IA
-    │   ├── formulario nativo
-    │   └── leads WordPress
-    ├── páginas híbridas
-    ├── páginas HUB completas
-    └── optimización de assets
+    ├── Diseños (hub_design)
+    │   ├── Header · Footer · Mega Menu
+    │   ├── Hero · Sección · Formulario
+    │   └── Landing · Página
+    ├── Versiones: borrador → preview → publicar → rollback
+    ├── Design System: tokens --hub-* por sitio
+    ├── Inserción: shortcode · bloque · widget · función
+    ├── Packages: manifest.json validado, ZIP de IA
+    ├── Formularios y leads con privacidad y conversiones
+    └── Mapa de migración y retirada de Elementor
 ```
 
 ## Modos objetivo
 
-### Legacy
+### Región
 
-Theme actual + Elementor continúan controlando la mayor parte de la página. HUB puede incorporar componentes puntuales.
+Header y Footer se migran **por separado**. En modo `inject` se conserva la
+plantilla del theme y el diseño HUB se coloca con los hooks de WordPress; en
+modo `replace`, Constructor HUB entrega el documento completo.
 
-### Híbrido
+### Fragmento
 
-Header, Footer y determinados bloques son HUB. El contenido restante puede seguir viniendo de Elementor/WordPress.
+Un componente HUB insertado dentro de una página que sigue siendo de Elementor,
+con `[hub_design slug="..."]`, el bloque, el widget o
+`constructor_hub_render()`. Es lo que permite reemplazar un hero sin reconstruir
+la página.
 
-### HUB
+### Documento
 
-La página usa templates y componentes propios HTML/CSS/JS. Elementor puede dejar de cargarse en esa URL.
+Landings y páginas con URL propia, renderizadas como fragmento en el shell HUB,
+como documento HTML completo generado por IA, o como package ZIP servido desde
+su carpeta.
 
-Las **Landings HUB** son un caso especializado de modo HUB para páginas de campaña.
+En los tres casos se conservan `wp_head()`, `wp_body_open()` y `wp_footer()`.
 
-A futuro puede existir un **HUB Tibox Theme opcional**, pero el plugin no debe depender de él.
+El **HUB Theme** existe en [`theme/hub-theme/`](theme/) y es **opcional**: no se
+empaqueta con el plugin.
 
 ## Sitios iniciales
 

@@ -1,10 +1,16 @@
 # START HERE — contexto para IA y nuevos colaboradores
 
-Última revisión: **2026-08-31**.
+Última revisión: **2026-08-31** (post-refundación v0.5).
 
 Este documento es el punto de entrada obligatorio para cualquier IA o persona que trabaje en **Constructor HUB Tibox**.
 
-> Auditoría actual: leer también `docs/AUDIT-HANDOFF-2026-08-31.md`. El estado v0.4 fue consolidado en `main` expresamente para auditoría y todavía no debe interpretarse como release estable.
+> **Estado actual:** la auditoría del 2026-08-31 (`docs/AUDIT-HANDOFF-2026-08-31.md`)
+> derivó en una refundación implementada en la rama `feat/hub-v0.5-refundacion`,
+> versión `0.5.0-dev`. Antes de tocar código lee
+> `docs/decisions/ADR-0003-design-unificado-y-versionado.md` y
+> `docs/decisions/ADR-0004-insertion-api-y-regiones.md`: el modelo de datos
+> cambió. Nada de esto se ha ejecutado todavía en un WordPress real; la Fase 7
+> del roadmap es QA y bloquea cualquier release.
 
 ## 1. Qué es este proyecto
 
@@ -44,82 +50,81 @@ Leer `docs/CLOUD-TIBOX-RELATION.md`.
 
 ## 4. Estado técnico heredado
 
-El primer MVP se llamó **Tibox AI Frontend**. El 2026-08-28 el producto se renombró a **Constructor HUB Tibox**.
+El primer MVP se llamó **Tibox AI Frontend**. El 2026-08-28 el producto se
+renombró a **Constructor HUB Tibox**. El MVP de página completa
+(`includes/class-tibox-ai-frontend.php`, `pages/home-ai/`,
+`templates/ai-page.php`) se eliminó en la Fase 5.
 
-Por compatibilidad todavía existen nombres históricos como:
+Nombres históricos que **siguen existiendo a propósito**:
 
-- `tibox-ai-frontend.php`;
-- `TIBOX_AI_FRONTEND_*`;
-- clase `TIBOX_AI_Frontend`;
-- carpeta/plantilla `home-ai`;
-- clases CSS `tbx-ai-*`.
+- `tibox-ai-frontend.php` como archivo bootstrap y como nombre de carpeta del
+  plugin. WordPress identifica un plugin por su ruta: renombrarlo instalaría una
+  segunda copia con clases duplicadas. Normalizarlo requiere una estrategia de
+  actualización y está pendiente en la Fase 1 del roadmap.
+- Constantes `TIBOX_AI_FRONTEND_*`.
+- Los post types `hub_component` y `hub_landing`, registrados sin interfaz para
+  que sus datos sigan disponibles tras la unificación.
+- El endpoint REST `tibox/v1/lead`, servido por el plugin como alias del
+  pipeline actual.
+- El hook `tibox_landing_lead_created`, puente documentado con las integraciones
+  WPCode.
 
-No asumir que esos nombres representan la arquitectura final. Deben migrarse gradualmente y con compatibilidad.
+## 5. Estado funcional actual
 
-## 5. Estado funcional actual en `main`
+### Modelo de datos
 
-El 2026-08-31 se consolidaron en `main` las fases v0.3 y v0.4 para permitir una auditoría integral del plugin.
+Un único CPT **`hub_design`** con un meta de tipo: `header`, `footer`, `menu`,
+`hero`, `section`, `form`, `landing`, `page`. El código visual **no** vive en
+post meta: vive en la tabla `wp_hub_design_versions` como versiones inmutables
+con estado `draft`, `live` o `archived`.
 
-### Header/Footer HUB — v0.3
+Publicar es mover un puntero. Rollback es moverlo atrás. Preview es una URL
+firmada que caduca.
 
-Rama histórica: `feat/hybrid-header-footer`.
+### Qué hay implementado
 
-- PR histórico `#2`: cerrado sin merge por permanecer Draft.
-- PR de consolidación `#4`: mergeado.
-- Merge commit: `ccd3949fcb0132cba6fa4107ad5c9479b4700776`.
+- Insertion API: shortcode `[hub_design]`, bloque de Gutenberg, widget de
+  Elementor y `constructor_hub_render()`.
+- Regiones Header y Footer independientes, en modo `theme`, `inject` o
+  `replace`.
+- Design System con tokens `--hub-*` exportables entre sitios.
+- Compilador de assets a archivo con aislamiento CSS opcional.
+- Contrato de Design Packages con `manifest.json` validado.
+- Formularios con token anti spam firmado, idempotencia real, correo encolado y
+  registro de entregas.
+- Leads con evidencia de consentimiento, exportación CSV, conversiones offline
+  de Google Ads, retención y las herramientas de privacidad de WordPress.
+- Mapa de migración por URL y retirada de assets de Elementor basada en él.
+- Migración WPCode por lotes con traspaso de URL explícito y redirección 301.
+- HUB Theme opcional en `theme/hub-theme/`.
+- Diagnóstico de compatibilidad y export/import de configuración.
 
-Incluye:
+### Qué NO está hecho
 
-- CPT `hub_component`;
-- Header/Footer HUB;
-- HTML/CSS/JS separados;
-- configuración de componentes activos;
-- renderer híbrido `Header HUB + the_content() + Footer HUB`;
-- CI PHP/JavaScript;
-- ejemplo Header/Footer Tibox 2026.
+- QA en un WordPress real. Nada de lo anterior se ha ejecutado fuera de análisis
+  estático y tests unitarios.
+- Biblioteca de componentes, Mega Menu real, adaptador de CAPTCHA, bridge CRM.
+- Migración de las homes de Tibox y Prodata.
 
-### Landings HUB — v0.4
-
-Rama histórica: `feat/landings-module`.
-
-- PR histórico `#3`: cerrado sin merge por ser Draft/apilado.
-- PR de consolidación `#5`: mergeado.
-- Merge commit: `705ce5c66ff8bebffbfb310fd1f212d00755e6b4`.
-
-El estado consolidado incluye, entre otras piezas:
-
-- menú `Constructor HUB → Landings`;
-- CPT público de Landings;
-- HTML/CSS/JS generado por IA;
-- renderer HUB;
-- modos Legacy/HUB/HTML completo/Package en evolución;
-- Header/Footer HUB opcionales;
-- formulario HUB nativo;
-- endpoint REST propio;
-- tracking UTM/GCLID/GBRAID/WBRAID;
-- honeypot/rate limit/idempotencia;
-- correo mediante `wp_mail()`;
-- compatibilidad esperada con WP Mail SMTP/SendGrid;
-- almacenamiento de leads y migración desde la implementación WPCode en evolución;
-- datos/protección de campañas Google Ads;
-- importador ZIP de Claude/IA con validaciones de seguridad;
-- compatibilidad temporal con integraciones históricas como WebOps.
-
-**Importante:** el merge se realizó para que Claude/otra IA pueda auditar una única rama `main`. No equivale a QA funcional completo ni a release estable.
-
-Leer obligatoriamente `docs/AUDIT-HANDOFF-2026-08-31.md` antes de emitir conclusiones de auditoría.
+Ver `docs/ROADMAP.md` para el detalle y `docs/CHANGELOG.md` para qué cambió en
+cada fase.
 
 ## 6. Arquitectura objetivo
 
-Tres modos principales:
+Tres alcances de render, no tres modos de página:
 
-- **Legacy:** theme + Elementor controlan la página; HUB puede insertar componentes puntuales.
-- **Híbrido:** HUB controla Header/Footer y/o bloques; Elementor puede continuar en contenido.
-- **HUB:** HUB controla la página completa y puede descargar Elementor en esa URL.
+- **Región:** Header y Footer, configurables por separado. `inject` conserva la
+  plantilla del theme; `replace` entrega el documento a HUB.
+- **Fragmento:** un diseño insertado dentro de contenido que el HUB no controla,
+  típicamente una página de Elementor. Es el mecanismo de la migración por
+  piezas.
+- **Documento:** los tipos `landing` y `page` tienen URL propia y se renderizan
+  como fragmento en el shell HUB, como documento HTML completo o como package.
 
-Las **Landings HUB** son un caso especializado de modo HUB: WordPress mantiene el objeto/publicación/SEO, pero Constructor HUB renderiza el cuerpo visual según el modo configurado.
+En todos los casos se conservan `wp_head()`, `wp_body_open()` y `wp_footer()`.
 
-A futuro puede existir **HUB Tibox Theme**, pero debe ser opcional.
+El **HUB Theme** existe en `theme/hub-theme/` y es opcional: no se empaqueta con
+el plugin y Constructor HUB funciona igual sobre cualquier theme.
 
 ## 7. Regla multi-sitio
 
@@ -139,14 +144,25 @@ Por lo tanto:
 Antes de modificar código:
 
 1. leer este archivo;
-2. leer `AUDIT-HANDOFF-2026-08-31.md` si la tarea es auditoría/revisión;
-3. leer `ARCHITECTURE.md`;
+2. leer `ARCHITECTURE.md`;
+3. leer los ADR, especialmente 0003 y 0004: el modelo de datos cambió;
 4. leer `DEVELOPMENT-PROTOCOL.md`;
 5. revisar las últimas entradas de `CHANGELOG.md`;
-6. revisar `ROADMAP.md`;
-7. confirmar la rama actual y el estado de `main`;
-8. revisar PRs/commits recientes;
-9. revisar el código real antes de asumir que una conversación antigua sigue vigente.
+6. revisar `ROADMAP.md`, incluida la Fase 7 de QA pendiente;
+7. si la tarea toca formularios o packages, leer `FORMS-AND-TRACKING.md` y
+   `AI-PACKAGE-CONTRACT.md`;
+8. confirmar la rama actual y el estado de `main`;
+9. revisar el código real antes de asumir que una conversación antigua sigue
+   vigente.
+
+Antes de entregar:
+
+```bash
+composer install
+composer run-script lint      # PHPCS, reglas de seguridad WordPress
+composer run-script analyse   # PHPStan nivel 5
+composer run-script test      # arnés propio
+```
 
 Al modificar:
 
@@ -182,7 +198,9 @@ Los commits exclusivamente documentales quedan auditables mediante Git y no gene
 
 - `README.md`: resumen público del proyecto.
 - `docs/START-HERE-AI.md`: onboarding/contexto.
-- `docs/AUDIT-HANDOFF-2026-08-31.md`: estado consolidado y alcance de auditoría actual.
+- `docs/AUDIT-HANDOFF-2026-08-31.md`: alcance de la auditoría que originó la refundación.
+- `docs/AI-PACKAGE-CONTRACT.md`: contrato de Design Packages para IA.
+- `docs/FORMS-AND-TRACKING.md`: contrato de formularios, leads y tracking.
 - `docs/ARCHITECTURE.md`: arquitectura vigente y objetivo.
 - `docs/DEVELOPMENT-PROTOCOL.md`: reglas para trabajar.
 - `docs/CHANGELOG.md`: historial técnico.

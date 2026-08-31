@@ -6,6 +6,26 @@ Formato requerido desde 2026-08-28: **fecha · rama · commit · objetivo · imp
 
 ---
 
+## 2026-08-31 — Documentación y afinado post-fases
+
+Rama: `feat/hub-v0.5-refundacion`.
+
+### Cambios
+
+- `README.md`, `docs/START-HERE-AI.md`, `docs/ARCHITECTURE.md` y
+  `docs/ROADMAP.md` reescritos sobre el estado real: modelo `hub_design`,
+  alcances de render por región, fragmento y documento, y una **Fase 7 de QA en
+  WordPress que bloquea cualquier release estable**.
+- **Resolución perezosa de variables**: `HUB_Tibox_Variables::replace()` solo
+  resuelve las variables que el contenido usa realmente. Antes, cada render
+  construía los tres menús de navegación y el formulario estándar completo
+  —incluido su token anti spam— aunque el diseño no los referenciara.
+- 11 aserciones nuevas sobre el contrato de variables, incluidas las que
+  garantizan que los alias históricos `{{LANDING_URL}}` y `{{LANDING_TITLE}}`
+  siguen registrados.
+
+---
+
 ## 2026-08-31 — Fase 6: HUB Theme opcional y operación multi-sitio
 
 Rama: `feat/hub-v0.5-refundacion`.
