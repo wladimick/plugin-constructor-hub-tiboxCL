@@ -6,6 +6,92 @@ Formato requerido desde 2026-08-28: **fecha · rama · commit · objetivo · imp
 
 ---
 
+## 2026-08-31 — Fase 1: core sólido
+
+Rama: `feat/hub-v0.5-refundacion`.
+Versión: `0.5.0-dev`.
+Estado: **implementado / QA WordPress pendiente**.
+
+Decisión: [`decisions/ADR-0003-design-unificado-y-versionado.md`](decisions/ADR-0003-design-unificado-y-versionado.md).
+
+### Objetivo
+
+Refundar el modelo de datos antes de seguir añadiendo tipos de componente. La
+auditoría concluyó que la ausencia de versionado y la duplicación entre
+componentes y landings no eran bugs sino consecuencias del almacenamiento en
+post meta.
+
+### Antes
+
+- Header/Footer en `hub_component`, Landings en `hub_landing`, con dos
+  almacenamientos, dos resolvedores de variables y dos renderers.
+- HTML/CSS/JS en post meta, sin historial: publicar destruía la versión previa.
+- CSS/JS impresos inline y globales en cada request.
+- Menú del producto colgando de `edit.php?post_type=hub_component`.
+- `manage_options` para operar, `unfiltered_html` para editar código.
+- Sin `uninstall.php`, sin i18n, sin WPCS, sin análisis estático, sin tests.
+
+### Después
+
+- **`hub_design`** unificado con `_hub_type`: header, footer, menu, hero,
+  section, form, landing, page. Los tipos no visibles devuelven 404 y `noindex`.
+- **`wp_hub_design_versions`**: versiones inmutables con estado
+  draft/live/archived. Publicar mueve un puntero; rollback lo mueve atrás.
+- **Preview firmado** por HMAC con caducidad, compartible sin cuenta WordPress.
+- **`HUB_Tibox_Variables`**: registro único y versionado de `{{VARIABLES}}`, con
+  detección de variables desconocidas para el importador.
+- **`HUB_Tibox_Asset_Compiler`**: CSS/JS de la versión publicada a archivos en
+  `uploads`, encolados y cacheables; fallback inline si el filesystem es de solo
+  lectura.
+- **`HUB_Tibox_Css_Scoper`**: aislamiento opcional del CSS por diseño, con
+  soporte de `@media`, `@supports`, `@keyframes`, cadenas y comentarios. Cubierto
+  por tests.
+- **`HUB_Tibox_Regions`**: Header y Footer configurables por separado, en modo
+  `theme`, `inject` (conserva la plantilla del theme) o `replace`. Resuelve la
+  imposibilidad de migrar una sola región.
+- **Capacidades propias** y menú de primer nivel `Constructor HUB`.
+- **`HUB_Tibox_Upgrade`**: migración idempotente y reversible desde los post
+  types históricos, conservando slugs, packages y configuración de Header/Footer.
+- `uninstall.php` que **no** borra datos salvo petición explícita.
+- i18n cargado, `composer.json`, `phpcs.xml.dist`, `phpstan.neon.dist`,
+  `.gitignore`, `.distignore` y arnés de tests propio.
+
+### Archivos principales
+
+`includes/class-hub-design.php`, `class-hub-version-store.php`,
+`class-hub-variables.php`, `class-hub-asset-compiler.php`,
+`class-hub-css-scoper.php`, `class-hub-regions.php`, `class-hub-render.php`,
+`class-hub-preview.php`, `class-hub-capabilities.php`, `class-hub-upgrade.php`,
+`class-hub-admin-menu.php`, `class-hub-design-admin.php`,
+`class-hub-settings-page.php`, `class-hub-form-config.php`,
+`class-hub-filesystem.php`, `class-hub-legacy-types.php`,
+`class-hub-plugin.php`, `templates/hub-shell.php`, `uninstall.php`.
+
+### Compatibilidad y riesgos
+
+- Los módulos históricos siguen en el repositorio y se arrancan si
+  `hub_tibox_designs_unified` es `0`.
+- La migración pasa los objetos históricos a borrador para evitar contenido
+  duplicado; no borra nada.
+- El aislamiento CSS queda desactivado en los diseños migrados: activarlo
+  cambiaría cómo renderizan.
+- Riesgo principal a validar en QA: reglas de reescritura y permalinks tras la
+  migración de landings publicadas.
+
+### QA
+
+- `php -l` en todos los archivos.
+- PHPCS con reglas de seguridad WordPress: sin errores.
+- PHPStan nivel 5 con `phpstan-wordpress`: sin errores.
+- 17 aserciones del arnés propio sobre el scoper CSS.
+- Pendiente: QA funcional en WordPress real.
+
+### Deuda
+
+Insertion API, Design System y adaptador Elementor llegan en la Fase 2.
+
+---
+
 ## 2026-08-31 — Fase 0: bloqueadores de producción
 
 Rama: `feat/hub-v0.5-refundacion`.

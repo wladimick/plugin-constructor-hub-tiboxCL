@@ -364,10 +364,12 @@ final class HUB_Tibox_Landing_Manager
             return;
         }
 
+        // phpcs:disable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- design code is the payload; the nonce and the code capability are verified above.
         update_post_meta($post_id, self::META_HTML, isset($_POST['hub_landing_html']) ? wp_unslash($_POST['hub_landing_html']) : '');
         update_post_meta($post_id, self::META_CSS, isset($_POST['hub_landing_css']) ? wp_unslash($_POST['hub_landing_css']) : '');
         update_post_meta($post_id, self::META_JS, isset($_POST['hub_landing_js']) ? wp_unslash($_POST['hub_landing_js']) : '');
         $full_html = isset($_POST['hub_landing_full_html']) ? wp_unslash($_POST['hub_landing_full_html']) : '';
+        // phpcs:enable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
         update_post_meta($post_id, self::META_FULL_HTML, $full_html);
     }
 
@@ -586,13 +588,17 @@ final class HUB_Tibox_Landing_Manager
 
     private function save_text_meta(int $post_id, string $meta_key, string $input_name): void
     {
+        // phpcs:disable WordPress.Security.NonceVerification.Missing -- verified by the caller before these helpers run.
         $value = isset($_POST[$input_name]) ? sanitize_text_field(wp_unslash($_POST[$input_name])) : '';
+        // phpcs:enable WordPress.Security.NonceVerification.Missing
         update_post_meta($post_id, $meta_key, $value);
     }
 
     private function save_date_meta(int $post_id, string $meta_key, string $input_name): void
     {
+        // phpcs:disable WordPress.Security.NonceVerification.Missing -- verified by the caller before these helpers run.
         $value = isset($_POST[$input_name]) ? sanitize_text_field(wp_unslash($_POST[$input_name])) : '';
+        // phpcs:enable WordPress.Security.NonceVerification.Missing
         if ($value !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
             $value = '';
         }

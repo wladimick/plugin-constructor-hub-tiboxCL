@@ -1,0 +1,17 @@
+includes:
+    - vendor/szepeviktor/phpstan-wordpress/extension.neon
+
+parameters:
+    level: 5
+    paths:
+        - tibox-ai-frontend.php
+        - uninstall.php
+        - includes
+        - templates
+    excludePaths:
+        - vendor (?)
+        - node_modules (?)
+        - examples (?)
+    bootstrapFiles:
+        - tests/phpstan-bootstrap.php
+    treatPhpDocTypesAsCertain: false

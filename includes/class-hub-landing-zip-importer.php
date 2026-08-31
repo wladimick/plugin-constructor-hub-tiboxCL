@@ -29,29 +29,50 @@ final class HUB_Tibox_Landing_Zip_Importer
     private function __construct()
     {
         add_action('post_edit_form_tag', [$this, 'add_multipart_enctype']);
-        add_action('add_meta_boxes_' . HUB_Tibox_Landing_Manager::POST_TYPE, [$this, 'add_meta_box']);
-        add_action('save_post_' . HUB_Tibox_Landing_Manager::POST_TYPE, [$this, 'handle_upload'], 30);
+        foreach (self::host_post_types() as $post_type) {
+            add_action('add_meta_boxes_' . $post_type, [$this, 'add_meta_box']);
+            add_action('save_post_' . $post_type, [$this, 'handle_upload'], 30);
+        }
         add_action('template_redirect', [$this, 'maybe_render_package'], -20);
         add_action('admin_notices', [$this, 'display_stored_errors']);
+        add_action('constructor_hub_design_deleted', [$this, 'delete_existing_folder']);
+    }
+
+    /**
+     * Post types that can host a package. Both the unified design type and the
+     * historical landing type, so a site mid-migration keeps working.
+     *
+     * @return string[]
+     */
+    public static function host_post_types(): array
+    {
+        $types = ['hub_landing'];
+        if (class_exists('HUB_Tibox_Design')) {
+            $types[] = HUB_Tibox_Design::POST_TYPE;
+        }
+
+        return array_values(array_unique($types));
     }
 
     public function add_multipart_enctype(WP_Post $post): void
     {
-        if ($post->post_type === HUB_Tibox_Landing_Manager::POST_TYPE) {
+        if (in_array($post->post_type, self::host_post_types(), true)) {
             echo ' enctype="multipart/form-data"';
         }
     }
 
     public function add_meta_box(): void
     {
-        add_meta_box(
-            'hub-landing-zip',
-            'Importar proyecto ZIP (Claude / IA)',
-            [$this, 'render_meta_box'],
-            HUB_Tibox_Landing_Manager::POST_TYPE,
-            'normal',
-            'high'
-        );
+        foreach (self::host_post_types() as $post_type) {
+            add_meta_box(
+                'hub-landing-zip',
+                'Importar proyecto ZIP (Claude / IA)',
+                [$this, 'render_meta_box'],
+                $post_type,
+                'normal',
+                'high'
+            );
+        }
     }
 
     public function render_meta_box(WP_Post $post): void
@@ -104,11 +125,13 @@ final class HUB_Tibox_Landing_Zip_Importer
         if (
             !isset($_FILES['hub_landing_zip_file']) ||
             !is_array($_FILES['hub_landing_zip_file']) ||
+            !isset($_FILES['hub_landing_zip_file']['error']) ||
             (int) $_FILES['hub_landing_zip_file']['error'] === UPLOAD_ERR_NO_FILE
         ) {
             return;
         }
 
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- the upload is handed to wp_handle_upload() and every field is validated below.
         $file = $_FILES['hub_landing_zip_file'];
         if ((int) $file['error'] !== UPLOAD_ERR_OK) {
             $this->add_admin_error('Error de subida ZIP: código ' . (int) $file['error'] . '.');
@@ -454,9 +477,6 @@ final class HUB_Tibox_Landing_Zip_Importer
 
     private function is_symlink(ZipArchive $zip, int $index): bool
     {
-        if (!method_exists($zip, 'getExternalAttributesIndex')) {
-            return false;
-        }
         $opsys = 0;
         $attr = 0;
         if (!$zip->getExternalAttributesIndex($index, $opsys, $attr)) {
@@ -468,7 +488,7 @@ final class HUB_Tibox_Landing_Zip_Importer
 
     public function maybe_render_package(): void
     {
-        if (is_admin() || !is_singular(HUB_Tibox_Landing_Manager::POST_TYPE) || is_feed() || is_embed()) {
+        if (is_admin() || !is_singular(self::host_post_types()) || is_feed() || is_embed()) {
             return;
         }
 
@@ -477,7 +497,7 @@ final class HUB_Tibox_Landing_Zip_Importer
         }
 
         $post_id = get_queried_object_id();
-        if (HUB_Tibox_Landing_Manager::instance()->get_mode($post_id) !== HUB_Tibox_Landing_Manager::MODE_PACKAGE) {
+        if (self::render_mode($post_id) !== 'package') {
             return;
         }
 
@@ -503,6 +523,17 @@ final class HUB_Tibox_Landing_Zip_Importer
         }
 
         HUB_Tibox_Landing_Document::render($html, $post_id, $base);
+    }
+
+    /** Render mode of the host object, whichever post type it is. */
+    private static function render_mode(int $post_id): string
+    {
+        if (class_exists('HUB_Tibox_Design') && get_post_type($post_id) === HUB_Tibox_Design::POST_TYPE) {
+            return HUB_Tibox_Design::get_render_mode($post_id);
+        }
+
+        $mode = (string) get_post_meta($post_id, '_hub_landing_mode', true);
+        return $mode !== '' ? $mode : 'hub';
     }
 
     public function get_extract_dir(int $post_id): string
@@ -589,45 +620,19 @@ final class HUB_Tibox_Landing_Zip_Importer
         return '';
     }
 
-    private function delete_existing_folder(int $post_id): void
+    public function delete_existing_folder(int $post_id): void
     {
         $this->rrmdir($this->get_extract_dir($post_id));
     }
 
     private function rrmdir(string $dir): void
     {
-        if (!is_dir($dir)) return;
-        $items = scandir($dir);
-        if (!is_array($items)) return;
-        foreach ($items as $item) {
-            if ($item === '.' || $item === '..') continue;
-            $path = $dir . '/' . $item;
-            if (is_dir($path) && !is_link($path)) {
-                $this->rrmdir($path);
-            } else {
-                @unlink($path);
-            }
-        }
-        @rmdir($dir);
+        HUB_Tibox_Filesystem::delete_directory($dir);
     }
 
     private function copy_directory(string $source, string $target): bool
     {
-        if (!wp_mkdir_p($target)) return false;
-        $items = scandir($source);
-        if (!is_array($items)) return false;
-        foreach ($items as $item) {
-            if ($item === '.' || $item === '..') continue;
-            $src = $source . '/' . $item;
-            $dst = $target . '/' . $item;
-            if (is_link($src)) return false;
-            if (is_dir($src)) {
-                if (!$this->copy_directory($src, $dst)) return false;
-            } elseif (!copy($src, $dst)) {
-                return false;
-            }
-        }
-        return true;
+        return HUB_Tibox_Filesystem::copy_directory($source, $target);
     }
 
     private function add_admin_error(string $message): void

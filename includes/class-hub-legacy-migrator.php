@@ -148,7 +148,7 @@ final class HUB_Tibox_Legacy_Migrator
                 'post_name' => $legacy->post_name,
                 'post_content' => $legacy->post_content,
                 'post_excerpt' => $legacy->post_excerpt,
-                'post_author' => $legacy->post_author,
+                'post_author' => (int) $legacy->post_author,
             ], true);
 
             if (is_wp_error($new_id)) {
@@ -262,7 +262,7 @@ final class HUB_Tibox_Legacy_Migrator
             'posts_per_page' => 1,
             'fields' => 'ids',
             'meta_key' => '_hub_legacy_landing_id',
-            'meta_value' => $legacy_id,
+            'meta_value' => (string) $legacy_id,
         ]);
         return !empty($posts) ? absint($posts[0]) : 0;
     }

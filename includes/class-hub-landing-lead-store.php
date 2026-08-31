@@ -288,7 +288,7 @@ final class HUB_Tibox_Landing_Lead_Store
             'posts_per_page' => 1,
             'fields' => 'ids',
             'meta_key' => '_hub_legacy_landing_id',
-            'meta_value' => $legacy_landing_id,
+            'meta_value' => (string) $legacy_landing_id,
         ]);
 
         return !empty($posts) ? absint($posts[0]) : 0;

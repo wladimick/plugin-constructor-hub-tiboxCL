@@ -26,7 +26,7 @@ final class HUB_Tibox_Landing_Document
         if (function_exists('wp_body_open')) {
             wp_body_open();
         } else {
-            do_action('wp_body_open');
+            do_action('wp_body_open'); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- WordPress core hook, fired as a fallback on very old versions.
         }
         $body_open = (string) ob_get_clean();
 
@@ -49,28 +49,7 @@ final class HUB_Tibox_Landing_Document
 
     public static function replace_variables(string $html, int $landing_id): string
     {
-        $logo_id = (int) get_theme_mod('custom_logo', 0);
-        $logo_url = $logo_id > 0 ? (string) wp_get_attachment_image_url($logo_id, 'full') : '';
-        $logo_html = has_custom_logo() ? get_custom_logo() : esc_html(get_bloginfo('name'));
-
-        $variables = [
-            '{{SITE_URL}}' => esc_url(home_url('/')),
-            '{{HOME_URL}}' => esc_url(home_url('/')),
-            '{{SITE_NAME}}' => esc_html(get_bloginfo('name')),
-            '{{CURRENT_YEAR}}' => esc_html(wp_date('Y')),
-            '{{CUSTOM_LOGO}}' => (string) $logo_html,
-            '{{CUSTOM_LOGO_URL}}' => esc_url($logo_url),
-            '{{LANDING_URL}}' => esc_url(get_permalink($landing_id)),
-            '{{LANDING_TITLE}}' => esc_html(get_the_title($landing_id)),
-            '{{FORM_ENDPOINT}}' => esc_url(rest_url('constructor-hub/v1/landing-submit')),
-            '{{PRIVACY_URL}}' => esc_url((string) apply_filters('constructor_hub_privacy_url', home_url('/aviso-de-privacidad/'), $landing_id)),
-        ];
-
-        if (class_exists('HUB_Tibox_Landing_Forms')) {
-            $variables['{{HUB_FORM}}'] = HUB_Tibox_Landing_Forms::instance()->render_default_form($landing_id);
-        }
-
-        return strtr($html, $variables);
+        return HUB_Tibox_Variables::replace($html, $landing_id, ['form_target' => $landing_id]);
     }
 
     private static function inject_into_head(string $html, string $content, bool $prefer_start): string

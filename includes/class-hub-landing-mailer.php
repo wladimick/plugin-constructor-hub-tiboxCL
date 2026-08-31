@@ -226,10 +226,7 @@ final class HUB_Tibox_Landing_Mailer
     /** @return string[] */
     public function recipients_for_landing(int $landing_id): array
     {
-        $raw = '';
-        if (class_exists('HUB_Tibox_Landing_Manager')) {
-            $raw = HUB_Tibox_Landing_Manager::instance()->get_recipient_emails($landing_id);
-        }
+        $raw = HUB_Tibox_Form_Config::recipients($landing_id);
         if (trim($raw) === '') {
             $raw = (string) get_option(self::OPTION_RECIPIENTS, get_option('admin_email'));
         }
@@ -238,12 +235,11 @@ final class HUB_Tibox_Landing_Mailer
 
     public function confirmation_enabled_for_landing(int $landing_id): bool
     {
-        if (class_exists('HUB_Tibox_Landing_Manager')) {
-            $override = HUB_Tibox_Landing_Manager::instance()->get_confirmation_override($landing_id);
-            if ($override !== null) {
-                return $override;
-            }
+        $override = HUB_Tibox_Form_Config::confirmation_override($landing_id);
+        if ($override !== null) {
+            return $override;
         }
+
         return get_option(self::OPTION_CONFIRMATION, '1') === '1';
     }
 

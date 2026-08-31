@@ -178,9 +178,11 @@ final class HUB_Tibox_Component_Manager
             return;
         }
 
+        // phpcs:disable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- design code is the payload; the nonce and the code capability are verified above.
         $html = isset($_POST['hub_component_html']) ? wp_unslash($_POST['hub_component_html']) : '';
         $css = isset($_POST['hub_component_css']) ? wp_unslash($_POST['hub_component_css']) : '';
         $js = isset($_POST['hub_component_js']) ? wp_unslash($_POST['hub_component_js']) : '';
+        // phpcs:enable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 
         update_post_meta($post_id, self::META_HTML, $html);
         update_post_meta($post_id, self::META_CSS, $css);
@@ -491,14 +493,14 @@ final class HUB_Tibox_Component_Manager
 
         $primary_menu = wp_nav_menu([
             'theme_location' => 'primary',
-            'container' => false,
+            'container' => '',
             'echo' => false,
             'fallback_cb' => false,
         ]);
 
         $footer_menu = wp_nav_menu([
             'theme_location' => 'footer',
-            'container' => false,
+            'container' => '',
             'echo' => false,
             'fallback_cb' => false,
         ]);

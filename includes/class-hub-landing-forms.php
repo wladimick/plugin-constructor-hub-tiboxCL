@@ -16,7 +16,6 @@ final class HUB_Tibox_Landing_Forms
     public const OPTION_IP_HEADER = 'hub_tibox_client_ip_header';
 
     private static ?self $instance = null;
-    private HUB_Tibox_Landing_Manager $landings;
     private HUB_Tibox_Landing_Lead_Store $store;
     private HUB_Tibox_Landing_Mailer $mailer;
 
@@ -24,7 +23,6 @@ final class HUB_Tibox_Landing_Forms
     {
         if (self::$instance === null) {
             self::$instance = new self(
-                HUB_Tibox_Landing_Manager::instance(),
                 HUB_Tibox_Landing_Lead_Store::instance(),
                 HUB_Tibox_Landing_Mailer::instance()
             );
@@ -33,16 +31,13 @@ final class HUB_Tibox_Landing_Forms
     }
 
     private function __construct(
-        HUB_Tibox_Landing_Manager $landings,
         HUB_Tibox_Landing_Lead_Store $store,
         HUB_Tibox_Landing_Mailer $mailer
     ) {
-        $this->landings = $landings;
         $this->store = $store;
         $this->mailer = $mailer;
 
         add_action('rest_api_init', [$this, 'register_rest_route']);
-        add_action('admin_menu', [$this, 'add_leads_page']);
     }
 
     public function register_rest_route(): void
@@ -89,8 +84,10 @@ final class HUB_Tibox_Landing_Forms
             return $this->response(false, false, 'Origen del formulario no válido.', 400);
         }
 
-        $is_landing = get_post_type($landing_id) === HUB_Tibox_Landing_Manager::POST_TYPE;
-        $source_key = $is_landing ? 'constructor_hub_landing' : 'constructor_hub_page';
+        $host_type = (string) get_post_type($landing_id);
+        $source_key = in_array($host_type, [HUB_Tibox_Design::POST_TYPE, 'hub_landing'], true)
+            ? 'constructor_hub_landing'
+            : 'constructor_hub_page';
 
         // The submission id is client supplied. The column is varchar(100) and a
         // longer value would abort the INSERT on MySQL strict mode.
@@ -106,7 +103,7 @@ final class HUB_Tibox_Landing_Forms
             return $this->response(
                 true,
                 false,
-                $this->landings->get_success_message($landing_id),
+                HUB_Tibox_Form_Config::success_message($landing_id),
                 200,
                 $submission_id
             );
@@ -117,7 +114,7 @@ final class HUB_Tibox_Landing_Forms
             return $this->response(
                 true,
                 false,
-                $this->landings->get_success_message($landing_id),
+                HUB_Tibox_Form_Config::success_message($landing_id),
                 200,
                 $submission_id,
                 $existing
@@ -179,6 +176,7 @@ final class HUB_Tibox_Landing_Forms
             $tracking
         );
 
+        // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- documented bridge for the historical WPCode integrations; see docs/CHANGELOG.md.
         do_action('tibox_landing_lead_created', array_merge(
             $fields,
             $tracking,
@@ -193,7 +191,7 @@ final class HUB_Tibox_Landing_Forms
         return $this->response(
             true,
             true,
-            $this->landings->get_success_message($landing_id),
+            HUB_Tibox_Form_Config::success_message($landing_id),
             201,
             $submission_id,
             $lead_id
@@ -202,7 +200,7 @@ final class HUB_Tibox_Landing_Forms
 
     public function render_default_form(int $landing_id): string
     {
-        $required = $this->landings->get_required_fields($landing_id);
+        $required = HUB_Tibox_Form_Config::required_fields($landing_id);
         $privacy_url = (string) apply_filters(
             'constructor_hub_privacy_url',
             home_url('/aviso-de-privacidad/'),
@@ -261,26 +259,10 @@ final class HUB_Tibox_Landing_Forms
         return (string) ob_get_clean();
     }
 
-    public function add_leads_page(): void
-    {
-        if (!class_exists('HUB_Tibox_Component_Manager')) {
-            return;
-        }
-
-        add_submenu_page(
-            'edit.php?post_type=' . HUB_Tibox_Component_Manager::POST_TYPE,
-            'Leads de Landings',
-            'Leads',
-            'manage_options',
-            'constructor-hub-leads',
-            [$this, 'render_leads_page']
-        );
-    }
-
     public function render_leads_page(): void
     {
-        if (!current_user_can('manage_options')) {
-            wp_die('No autorizado.');
+        if (!HUB_Tibox_Capabilities::can_manage_leads()) {
+            wp_die(esc_html__('No autorizado.', 'constructor-hub-tibox'));
         }
 
         $this->store->maybe_install_table();
@@ -314,9 +296,12 @@ final class HUB_Tibox_Landing_Forms
         $rows = is_array($rows) ? $rows : [];
 
         $landings = get_posts([
-            'post_type' => HUB_Tibox_Landing_Manager::POST_TYPE,
+            'post_type' => array_values(array_filter([
+                class_exists('HUB_Tibox_Design') ? HUB_Tibox_Design::POST_TYPE : '',
+                'hub_landing',
+            ])),
             'post_status' => 'any',
-            'posts_per_page' => -1,
+            'posts_per_page' => 200,
             'orderby' => 'title',
             'order' => 'ASC',
         ]);
@@ -325,7 +310,6 @@ final class HUB_Tibox_Landing_Forms
             <h1>Leads de Landings</h1>
             <p>Fuente de verdad local de los formularios gestionados por Constructor HUB.</p>
             <form method="get" style="margin:16px 0;">
-                <input type="hidden" name="post_type" value="<?php echo esc_attr(HUB_Tibox_Component_Manager::POST_TYPE); ?>">
                 <input type="hidden" name="page" value="constructor-hub-leads">
                 <label for="hub-lead-filter"><strong>Landing:</strong></label>
                 <select id="hub-lead-filter" name="landing_id">
@@ -384,21 +368,18 @@ final class HUB_Tibox_Landing_Forms
             return;
         }
 
-        $args = [
-            'post_type' => HUB_Tibox_Component_Manager::POST_TYPE,
-            'page' => 'constructor-hub-leads',
-        ];
+        $args = ['page' => 'constructor-hub-leads'];
         if ($landing_id > 0) {
             $args['landing_id'] = $landing_id;
         }
 
         echo '<p style="margin-top:16px">';
         if ($page > 1) {
-            echo '<a class="button" href="' . esc_url(add_query_arg(array_merge($args, ['paged' => $page - 1]), admin_url('edit.php'))) . '">← Anterior</a> ';
+            echo '<a class="button" href="' . esc_url(add_query_arg(array_merge($args, ['paged' => $page - 1]), admin_url('admin.php'))) . '">← Anterior</a> ';
         }
         echo '<span style="margin:0 10px">Página ' . esc_html((string) $page) . ' de ' . esc_html((string) $pages) . '</span>';
         if ($page < $pages) {
-            echo ' <a class="button" href="' . esc_url(add_query_arg(array_merge($args, ['paged' => $page + 1]), admin_url('edit.php'))) . '">Siguiente →</a>';
+            echo ' <a class="button" href="' . esc_url(add_query_arg(array_merge($args, ['paged' => $page + 1]), admin_url('admin.php'))) . '">Siguiente →</a>';
         }
         echo '</p>';
     }
@@ -467,7 +448,7 @@ final class HUB_Tibox_Landing_Forms
             $errors['privacy'] = 'Debes aceptar el aviso de privacidad.';
         }
 
-        foreach ($this->landings->get_required_fields($landing_id) as $field) {
+        foreach (HUB_Tibox_Form_Config::required_fields($landing_id) as $field) {
             $value = $fields[$field] ?? '';
             if (is_array($value) ? $value === [] : trim((string) $value) === '') {
                 $errors[$field] = 'Este campo es obligatorio.';
