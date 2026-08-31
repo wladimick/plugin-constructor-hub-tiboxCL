@@ -1,6 +1,6 @@
 # Roadmap — Constructor HUB Tibox
 
-Base: 2026-08-28.
+Base: 2026-08-28. Actualizado: 2026-08-31.
 
 El roadmap prioriza migración segura de sitios existentes antes que reemplazo total.
 
@@ -16,7 +16,7 @@ Estado: **en curso**.
 - [x] Crear protocolo de documentación.
 - [x] Documentar relación con Cloud-tibox.
 - [ ] Normalizar namespaces internos heredados de `Tibox AI Frontend` sin romper upgrades.
-- [ ] Añadir CI básico PHP/JS.
+- [x] Añadir CI básico PHP/JS.
 
 ## Fase 1 — Header y Footer globales HUB
 
@@ -24,18 +24,18 @@ Prioridad inmediata.
 
 Objetivo: poder reemplazar Header y/o Footer manteniendo el contenido existente de Elementor.
 
-- [ ] Registry de componentes globales.
-- [ ] tipo `header`.
-- [ ] tipo `footer`.
-- [ ] selección de componente activo.
-- [ ] ámbito global o páginas seleccionadas.
+- [x] Registry de componentes globales — rama `feat/hybrid-header-footer`.
+- [x] tipo `header`.
+- [x] tipo `footer`.
+- [x] selección de componente activo.
+- [x] ámbito global o páginas seleccionadas.
 - [ ] preview solo para administradores.
-- [ ] publicar/rollback.
-- [ ] evitar Header/Footer duplicados con Elementor Theme Builder/theme actual.
+- [ ] publicar/rollback versionado.
+- [ ] evitar Header/Footer duplicados con Elementor Theme Builder/theme actual mediante adaptador.
 - [ ] adaptador Elementor para esta responsabilidad.
-- [ ] mantener `wp_head`, `wp_body_open`, `wp_footer`.
-- [ ] primer Header Tibox.
-- [ ] primer Footer Tibox.
+- [x] mantener `wp_head`, `wp_body_open`, `wp_footer`.
+- [x] primer Header Tibox de prueba.
+- [x] primer Footer Tibox de prueba.
 - [ ] primer Header/Footer Prodata.
 
 ## Fase 2 — Design System
@@ -59,7 +59,7 @@ El core nunca debe hardcodear la identidad visual de Tibox.
 - [ ] grids/cards.
 - [ ] logos/partners.
 - [ ] navegación.
-- [ ] formularios.
+- [x] base de formularios reutilizables mediante módulo Landings.
 - [ ] secciones genéricas.
 - [ ] shortcode/bloque de inserción temporal para páginas Elementor.
 - [ ] assets por componente.
@@ -83,6 +83,38 @@ Tomar como antecedente Cloud-tibox.
 - [ ] variables dinámicas.
 - [ ] documentación específica Claude Design/ChatGPT.
 
+## Fase 4A — Landings HUB
+
+Estado: **MVP implementado en `feat/landings-module`; QA WordPress pendiente**.
+
+Objetivo: crear páginas de campaña completas con IA, formulario nativo y WordPress como backend, sin renderizar Elementor.
+
+- [x] menú `Landings` dentro de Constructor HUB.
+- [x] CPT público `hub_landing`.
+- [x] editor separado HTML/CSS/JS.
+- [x] renderer full-page independiente del theme.
+- [x] conservar `wp_head`, `wp_body_open`, `wp_footer`.
+- [x] variables dinámicas de sitio/landing.
+- [x] `{{HUB_FORM}}`.
+- [x] soporte formulario IA con `data-hub-landing-form`.
+- [x] REST endpoint genérico.
+- [x] almacenamiento de leads en WordPress.
+- [x] menú `Envíos Landings`.
+- [x] `wp_mail` por landing.
+- [x] UTM/GCLID/GBRAID/WBRAID.
+- [x] `dataLayer` `form_submit`.
+- [x] honeypot + rate limit + idempotencia.
+- [x] canvas independiente o Header/Footer HUB.
+- [x] Landing Starter de QA.
+- [ ] QA Rank Math/canonical.
+- [ ] QA GTM/dataLayer real.
+- [ ] QA correo real.
+- [ ] import ZIP directo desde Claude/ChatGPT.
+- [ ] selector de campos del formulario.
+- [ ] preview/versionado/rollback.
+- [ ] modo URL raíz como Page cuando sea necesario.
+- [ ] optimización/aggressive asset stripping por landing.
+
 ## Fase 5 — Página Híbrida
 
 - [ ] establecer modo por página.
@@ -95,13 +127,15 @@ Tomar como antecedente Cloud-tibox.
 
 ## Fase 6 — Página HUB completa
 
-- [ ] renderer completo.
+- [ ] renderer completo para Pages estándar.
 - [ ] plantillas Home/Página/Single/Archive/404.
 - [ ] eliminar assets Elementor solo cuando no sean necesarios.
 - [ ] conservar SEO/analítica.
 - [ ] migrar home Tibox.
 - [ ] migrar home Prodata.
 - [ ] medir Core Web Vitals antes/después.
+
+Nota: el renderer de **Landings HUB** ya resuelve el caso especializado de página de campaña completa; esta fase se refiere a migrar Pages/plantillas WordPress generales.
 
 ## Fase 7 — Adaptadores e integraciones
 
@@ -119,14 +153,15 @@ Tomar como antecedente Cloud-tibox.
 
 ### Analítica
 
-- [ ] GTM/dataLayer.
+- [x] contrato `dataLayer` para Landings.
 - [ ] evitar tags duplicados.
 
 ### Formularios
 
-- [ ] interfaz backend genérica.
-- [ ] adaptador endpoint Tibox.
+- [x] interfaz backend genérica inicial para Landings.
+- [ ] adaptador endpoint Tibox/WebOps si se requiere.
 - [ ] adaptador WPForms si se requiere.
+- [ ] adaptador anti-spam externo opcional.
 
 ## Fase 8 — Migración de dependencias WPCode
 
