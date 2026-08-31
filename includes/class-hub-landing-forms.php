@@ -36,6 +36,7 @@ final class HUB_Tibox_Landing_Forms
 
         add_action('init', [$this, 'register_submission_post_type']);
         add_action('rest_api_init', [$this, 'register_rest_route']);
+        add_action('add_meta_boxes_' . self::SUBMISSION_POST_TYPE, [$this, 'add_submission_meta_box']);
     }
 
     public function register_submission_post_type(): void
@@ -57,6 +58,70 @@ final class HUB_Tibox_Landing_Forms
             'capability_type' => 'post',
             'map_meta_cap' => true,
         ]);
+    }
+
+    public function add_submission_meta_box(): void
+    {
+        add_meta_box(
+            'hub-landing-lead-details',
+            'Datos del envío',
+            [$this, 'render_submission_meta_box'],
+            self::SUBMISSION_POST_TYPE,
+            'normal',
+            'high'
+        );
+    }
+
+    public function render_submission_meta_box(WP_Post $post): void
+    {
+        $landing_id = absint(get_post_meta($post->ID, '_hub_landing_id', true));
+        $submission_id = (string) get_post_meta($post->ID, '_hub_submission_id', true);
+        $submitted_at = (string) get_post_meta($post->ID, '_hub_submitted_at', true);
+        $fields = json_decode((string) get_post_meta($post->ID, '_hub_fields', true), true);
+        $tracking = json_decode((string) get_post_meta($post->ID, '_hub_tracking', true), true);
+
+        $fields = is_array($fields) ? $fields : [];
+        $tracking = is_array($tracking) ? $tracking : [];
+        ?>
+        <table class="widefat striped" style="max-width:1000px;">
+            <tbody>
+                <tr>
+                    <th style="width:180px;">Landing</th>
+                    <td>
+                        <?php if ($landing_id > 0) : ?>
+                            <a href="<?php echo esc_url(get_edit_post_link($landing_id)); ?>"><?php echo esc_html(get_the_title($landing_id)); ?></a>
+                        <?php else : ?>
+                            —
+                        <?php endif; ?>
+                    </td>
+                </tr>
+                <tr><th>Fecha</th><td><?php echo esc_html($submitted_at ?: '—'); ?></td></tr>
+                <tr><th>Submission ID</th><td><code><?php echo esc_html($submission_id ?: '—'); ?></code></td></tr>
+                <?php foreach ($fields as $key => $value) : ?>
+                    <?php if ($key === 'privacy') continue; ?>
+                    <tr>
+                        <th><?php echo esc_html(ucfirst(str_replace('_', ' ', (string) $key))); ?></th>
+                        <td><?php echo esc_html(is_array($value) ? implode(', ', $value) : (string) $value); ?></td>
+                    </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+
+        <?php if (array_filter($tracking) !== []) : ?>
+            <h3>Tracking</h3>
+            <table class="widefat striped" style="max-width:1000px;">
+                <tbody>
+                    <?php foreach ($tracking as $key => $value) : ?>
+                        <?php if ((string) $value === '') continue; ?>
+                        <tr>
+                            <th style="width:180px;"><?php echo esc_html($key); ?></th>
+                            <td><?php echo esc_html((string) $value); ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        <?php endif; ?>
+        <?php
     }
 
     public function register_rest_route(): void
@@ -189,7 +254,12 @@ final class HUB_Tibox_Landing_Forms
 
     public function render_default_form(int $landing_id): string
     {
-        $privacy_url = esc_url(home_url('/aviso-de-privacidad/'));
+        $privacy_url = (string) apply_filters(
+            'constructor_hub_privacy_url',
+            home_url('/aviso-de-privacidad/'),
+            $landing_id
+        );
+        $privacy_url = esc_url($privacy_url);
 
         ob_start();
         ?>
@@ -304,8 +374,8 @@ final class HUB_Tibox_Landing_Forms
 
             if (is_array($value)) {
                 $items = array_slice($value, 0, 20);
-                $clean = array_map(static function ($item): string {
-                    return mb_substr(sanitize_text_field((string) $item), 0, 500);
+                $clean = array_map(function ($item): string {
+                    return $this->truncate_text(sanitize_text_field((string) $item), 500);
                 }, $items);
                 $fields[$field_key] = $clean;
                 continue;
@@ -313,8 +383,8 @@ final class HUB_Tibox_Landing_Forms
 
             $text = (string) $value;
             $fields[$field_key] = $field_key === 'message'
-                ? mb_substr(sanitize_textarea_field($text), 0, 4000)
-                : mb_substr(sanitize_text_field($text), 0, 1000);
+                ? $this->truncate_text(sanitize_textarea_field($text), 4000)
+                : $this->truncate_text(sanitize_text_field($text), 1000);
         }
 
         $fields['email'] = sanitize_email((string) ($payload['email'] ?? ''));
@@ -332,10 +402,22 @@ final class HUB_Tibox_Landing_Forms
 
         $tracking = [];
         foreach ($keys as $key) {
-            $tracking[$key] = mb_substr(sanitize_text_field((string) ($payload[$key] ?? '')), 0, 1000);
+            $tracking[$key] = $this->truncate_text(
+                sanitize_text_field((string) ($payload[$key] ?? '')),
+                1000
+            );
         }
 
         return $tracking;
+    }
+
+    private function truncate_text(string $value, int $length): string
+    {
+        if (function_exists('mb_substr')) {
+            return mb_substr($value, 0, $length);
+        }
+
+        return substr($value, 0, $length);
     }
 
     private function send_notification(int $landing_id, int $lead_id, array $fields, array $tracking): void
