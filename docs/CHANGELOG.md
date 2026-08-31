@@ -6,6 +6,65 @@ Formato requerido desde 2026-08-28: **fecha · rama · commit · objetivo · imp
 
 ---
 
+## 2026-08-31 — Módulo Landings HUB
+
+Rama: `feat/landings-module`.  
+Base: `feat/hybrid-header-footer`.  
+Estado: **implementado en rama / QA WordPress pendiente**.
+
+Documento detallado: [`changes/2026-08-31-landings-module.md`](changes/2026-08-31-landings-module.md).  
+Decisión: [`decisions/ADR-0002-landings-cpt-native-forms.md`](decisions/ADR-0002-landings-cpt-native-forms.md).
+
+### Objetivo
+
+Añadir un apartado **Landings** dentro de Constructor HUB para crear páginas completas mediante HTML/CSS/JS generado por IA, sin renderizar Elementor, manteniendo WordPress como backend y con un formulario nativo reutilizable entre Tibox, Prodata y futuros sitios.
+
+### Commits funcionales
+
+- `6d479e49b824a4000a302c0e8b8d7d594b9ae05b` — CPT `hub_landing` + editor HTML/CSS/JS + configuración.
+- `309e258fb3b3c500acad10111b7e049eac35f03a` — endpoint y almacenamiento inicial de formularios.
+- `bc313f2fcfcc285590041eaa37978a6cf68ff921` — renderer completo de Landings.
+- `dbcc8e40f4f167174ab96f519593ce568f7112aa` — template frontend independiente del theme.
+- `d64fa2b32df465a252656a97184037899bb00d67` — frontend de formulario + tracking + `dataLayer`.
+- `4aa06cd787586db23487fa06513db08dd28e4c93` — CSS estructural mínimo.
+- `be3d9bed9096ade9016582989e9c4fa4c0196ec2` — carga CSS base desde el renderer.
+- `338da903f738029171f5f5fc69aeb9e327c7c001` — integra módulo y versiona `0.4.0-dev`.
+- `6ae3ef055b3c714f2c4c3556caeda817c4718663` — flush controlado de rewrite `/landing/`.
+- `e347832dbbe253bdb69b89aa620dbabf6ed6a3fd` — vista de leads en admin, privacy URL filtrable y fallback sin mbstring.
+
+### Ejemplo de QA
+
+- `cedf7b56ef461e7322f76561044be220d68a539b` — Landing Starter HTML.
+- `3e4a5bf4be8adf5a6ec0ec2137bc705e7cf10539` — Landing Starter CSS.
+- `26d0d5897eec53fcc6e94785d4bf26522276e5fd` — Landing Starter JS.
+- `212562e59e76d66ecf81605e225ed75f5db99b13` — instrucciones del ejemplo.
+
+### Documentación
+
+- `91a4a88fd0a21b4214aab2aa1997e0eb9c536ad4` — ADR-0002.
+- `9779ef62148d6a9ff2176c6b4f4379190253a2f9` — documento detallado del cambio.
+
+### Comportamiento
+
+- nuevo menú `Constructor HUB → Landings`;
+- nuevo menú `Constructor HUB → Envíos Landings`;
+- URL inicial `/landing/<slug>/`;
+- modo canvas independiente o Header/Footer HUB;
+- variable `{{HUB_FORM}}`;
+- formularios IA custom mediante `data-hub-landing-form`;
+- endpoint `POST /wp-json/constructor-hub/v1/landing-submit`;
+- honeypot, rate limit e idempotencia;
+- `wp_mail` por landing;
+- UTMs + GCLID/GBRAID/WBRAID;
+- `dataLayer` `form_submit` tras creación correcta;
+- hook `constructor_hub_landing_lead_created` para bridges futuros.
+
+### QA/deuda
+
+Pendiente CI de la rama y QA funcional en WordPress real. Debe validarse Rank Math, canonical, GTM, correo, registro de lead, responsive y ausencia de render Elementor antes de merge.
+
+---
+
 ## 2026-08-28 — Header/Footer HUB híbridos
 
 Rama: `feat/hybrid-header-footer`.
