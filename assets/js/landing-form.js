@@ -37,6 +37,12 @@
         status.dataset.state = type || '';
     };
 
+    const isConsentValue = (value) => {
+        if (value === true) return true;
+        const normalized = String(value || '').toLowerCase();
+        return ['1', 'true', 'on', 'yes', 'si', 'sí'].includes(normalized);
+    };
+
     forms.forEach((form) => {
         if (form.dataset.hubInitialized === '1') return;
         form.dataset.hubInitialized = '1';
@@ -54,7 +60,7 @@
                 ...fields,
                 landing_id: Number(fields.landing_id || config.landingId || 0),
                 submission_id: submissionId(),
-                privacy: fields.privacy === '1' || fields.privacy === 'true' || fields.privacy === true,
+                privacy: isConsentValue(fields.privacy),
                 landing_url: config.landingUrl || window.location.href.split('#')[0],
                 page_title: config.pageTitle || document.title,
                 utm_source: query.get('utm_source') || '',
@@ -98,15 +104,17 @@
                 );
                 form.reset();
 
-                window.dataLayer = window.dataLayer || [];
-                window.dataLayer.push({
-                    event: config.eventName || 'form_submit',
-                    form_id: `hub-landing-${payload.landing_id}`,
-                    landing_id: payload.landing_id,
-                    submission_id: result.submission_id || payload.submission_id,
-                    source: 'constructor_hub_landing',
-                    lead_created: Boolean(result.lead_created),
-                });
+                if (result.lead_created) {
+                    window.dataLayer = window.dataLayer || [];
+                    window.dataLayer.push({
+                        event: config.eventName || 'form_submit',
+                        form_id: `hub-landing-${payload.landing_id}`,
+                        landing_id: payload.landing_id,
+                        submission_id: result.submission_id || payload.submission_id,
+                        source: 'constructor_hub_landing',
+                        lead_created: true,
+                    });
+                }
 
                 form.dispatchEvent(new CustomEvent('hub:landing-form-success', {
                     bubbles: true,
