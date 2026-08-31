@@ -54,9 +54,27 @@ final class HUB_Tibox_Landing_Forms
             'show_ui' => true,
             'show_in_menu' => 'edit.php?post_type=' . HUB_Tibox_Component_Manager::POST_TYPE,
             'show_in_rest' => false,
-            'supports' => ['title'],
-            'capability_type' => 'post',
-            'map_meta_cap' => true,
+            'supports' => [],
+            // Leads contain personal data. Only administrators should be able to
+            // browse/read/delete them from wp-admin. Public creation happens via
+            // the REST handler and does not rely on these UI capabilities.
+            'capabilities' => [
+                'edit_post' => 'manage_options',
+                'read_post' => 'manage_options',
+                'delete_post' => 'manage_options',
+                'edit_posts' => 'manage_options',
+                'edit_others_posts' => 'manage_options',
+                'publish_posts' => 'manage_options',
+                'read_private_posts' => 'manage_options',
+                'delete_posts' => 'manage_options',
+                'delete_private_posts' => 'manage_options',
+                'delete_published_posts' => 'manage_options',
+                'delete_others_posts' => 'manage_options',
+                'edit_private_posts' => 'manage_options',
+                'edit_published_posts' => 'manage_options',
+                'create_posts' => 'do_not_allow',
+            ],
+            'map_meta_cap' => false,
         ]);
     }
 
