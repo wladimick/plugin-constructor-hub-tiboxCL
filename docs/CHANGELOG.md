@@ -6,6 +6,58 @@ Formato requerido desde 2026-08-28: **fecha · rama · commit · objetivo · imp
 
 ---
 
+## 2026-08-31 — Fase 2: componentes y Design System
+
+Rama: `feat/hub-v0.5-refundacion`.
+Estado: **implementado / QA WordPress pendiente**.
+
+Decisión: [`decisions/ADR-0004-insertion-api-y-regiones.md`](decisions/ADR-0004-insertion-api-y-regiones.md).
+
+### Objetivo
+
+Hacer posible la migración por piezas. Hasta aquí un componente solo podía
+renderizarse sustituyendo la plantilla completa, y el modo híbrido exigía Header
+y Footer HUB a la vez.
+
+### Cambios
+
+- **Insertion API**: shortcode `[hub_design slug="..."]`, bloque de Gutenberg con
+  render en servidor, widget de Elementor y función de plantilla
+  `constructor_hub_render()`. Las cuatro entradas comparten un único renderer.
+- **Regiones independientes** con modos `theme`, `inject` y `replace`, alcance
+  `all` / `selected` / `except` y selector de ocultación configurable.
+- **Design System**: tokens `--hub-*` por sitio (color, tipografía, layout,
+  forma), pantalla propia, CSS impreso una vez, export e import en JSON. Los
+  valores por defecto son neutros; el core no contiene la identidad de ningún
+  cliente.
+- **Adaptador Elementor** en `includes/adapters/`: widget, soporte opt-in del CPT,
+  detección de Elementor Pro y aviso de conflicto con Theme Builder, y el filtro
+  `constructor_hub_elementor_needed` que responde si una página todavía necesita
+  Elementor a partir de datos reales y no de nombres de handle.
+- El soporte de Elementor para el CPT sale del core y pasa al adaptador.
+- Tests del saneador de SVG del importador ZIP: 13 aserciones nuevas.
+
+### Archivos principales
+
+`includes/class-hub-insertion.php`, `class-hub-design-system.php`,
+`includes/adapters/class-hub-elementor-adapter.php`,
+`includes/adapters/class-hub-elementor-widget.php`,
+`assets/js/block-hub-design.js`, `tests/test-svg-sanitizer.php`.
+
+### Compatibilidad y riesgos
+
+- El modo `inject` necesita un selector CSS específico del theme; sin él, el
+  header del theme y el HUB conviven en la página.
+- Con Elementor Pro y Theme Builder activo puede haber dos headers. El adaptador
+  avisa en las pantallas de Constructor HUB.
+
+### QA
+
+PHPCS y PHPStan nivel 5 sin errores; 30 aserciones del arnés propio.
+Pendiente QA funcional en WordPress real.
+
+---
+
 ## 2026-08-31 — Fase 1: core sólido
 
 Rama: `feat/hub-v0.5-refundacion`.

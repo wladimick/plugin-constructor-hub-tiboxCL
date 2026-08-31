@@ -40,9 +40,14 @@ require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-preview.php';
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-asset-compiler.php';
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-regions.php';
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-render.php';
+require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-insertion.php';
+require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-design-system.php';
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-form-config.php';
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-legacy-types.php';
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-upgrade.php';
+
+// Adapters.
+require_once TIBOX_AI_FRONTEND_DIR . 'includes/adapters/class-hub-elementor-adapter.php';
 
 // Admin.
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-admin-menu.php';

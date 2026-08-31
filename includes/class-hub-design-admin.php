@@ -313,7 +313,15 @@ final class HUB_Tibox_Design_Admin
             Formulario propio: usar <code>data-hub-landing-form</code>. Honeypot: <code>website</code>.
         </p>
         <p><strong>Insertar en otra página</strong></p>
-        <p><code>[hub_design slug="<?php echo esc_html($post->post_name !== '' ? $post->post_name : 'slug'); ?>"]</code></p>
+        <p>
+            Shortcode:<br>
+            <code>[hub_design slug="<?php echo esc_html($post->post_name !== '' ? $post->post_name : 'slug'); ?>"]</code>
+        </p>
+        <p>
+            Bloque: <em>Diseño HUB</em>. Elementor: widget <em>Diseño HUB</em>.<br>
+            Plantilla PHP:<br>
+            <code>constructor_hub_render('<?php echo esc_html($post->post_name !== '' ? $post->post_name : 'slug'); ?>');</code>
+        </p>
         <?php
     }
 

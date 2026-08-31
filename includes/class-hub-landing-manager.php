@@ -52,7 +52,6 @@ final class HUB_Tibox_Landing_Manager
     {
         add_action('init', [$this, 'register_post_type']);
         add_action('init', [$this, 'maybe_flush_rewrite_rules'], 99);
-        add_action('admin_init', [$this, 'enable_elementor_support']);
         add_action('add_meta_boxes_' . self::POST_TYPE, [$this, 'add_meta_boxes']);
         add_action('save_post_' . self::POST_TYPE, [$this, 'save_landing']);
         add_filter('map_meta_cap', [$this, 'protect_active_campaign'], 10, 4);
@@ -110,29 +109,6 @@ final class HUB_Tibox_Landing_Manager
         }
         flush_rewrite_rules(false);
         update_option(self::OPTION_REWRITE_VERSION, self::REWRITE_VERSION, false);
-    }
-
-    /**
-     * Elementor support is opt-in and lives in the Elementor adapter, not in the
-     * core: writing another plugin's global option on every admin request is an
-     * invisible side effect and contradicts ADR-0001.
-     */
-    public function enable_elementor_support(): void
-    {
-        if (!did_action('elementor/loaded')) {
-            return;
-        }
-
-        if (get_option('hub_tibox_elementor_landing_support', '0') !== '1') {
-            return;
-        }
-
-        $supported = get_option('elementor_cpt_support', ['page', 'post']);
-        $supported = is_array($supported) ? $supported : ['page', 'post'];
-        if (!in_array(self::POST_TYPE, $supported, true)) {
-            $supported[] = self::POST_TYPE;
-            update_option('elementor_cpt_support', array_values(array_unique($supported)));
-        }
     }
 
     public function add_meta_boxes(): void

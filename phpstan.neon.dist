@@ -12,6 +12,9 @@ parameters:
         - vendor (?)
         - node_modules (?)
         - examples (?)
+        # Extends \Elementor\Widget_Base, which only exists when Elementor is
+        # installed. The file guards its own class_exists() before declaring.
+        - includes/adapters/class-hub-elementor-widget.php
     bootstrapFiles:
         - tests/phpstan-bootstrap.php
     treatPhpDocTypesAsCertain: false

@@ -305,16 +305,6 @@ final class HUB_Tibox_Component_Manager
                         </td>
                     </tr>
                     <tr>
-                        <th scope="row">Elementor en Landings</th>
-                        <td>
-                            <label>
-                                <input type="checkbox" name="hub_elementor_landing_support" value="1" <?php checked(get_option('hub_tibox_elementor_landing_support', '0'), '1'); ?>>
-                                Permitir que Elementor edite el CPT de Landings.
-                            </label>
-                            <p class="description">Desactivado por defecto: el core no modifica la configuración de Elementor sin autorización explícita.</p>
-                        </td>
-                    </tr>
-                    <tr>
                         <th scope="row"><label for="hub-hybrid-pages">Páginas de prueba/seleccionadas</label></th>
                         <td>
                             <select id="hub-hybrid-pages" name="hub_hybrid_pages[]" multiple size="12" style="min-width:360px;max-width:100%;">
@@ -370,7 +360,6 @@ final class HUB_Tibox_Component_Manager
             ? preg_replace('/[^A-Za-z0-9_-]/', '', sanitize_text_field(wp_unslash($_POST['hub_client_ip_header'])))
             : '';
         update_option(HUB_Tibox_Landing_Forms::OPTION_IP_HEADER, (string) $ip_header, false);
-        update_option('hub_tibox_elementor_landing_support', isset($_POST['hub_elementor_landing_support']) ? '1' : '0', false);
 
         wp_safe_redirect(add_query_arg([
             'post_type' => self::POST_TYPE,
