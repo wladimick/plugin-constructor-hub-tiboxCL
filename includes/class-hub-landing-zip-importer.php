@@ -433,7 +433,9 @@ final class HUB_Tibox_Landing_Zip_Importer
                 if (!$element instanceof DOMElement) {
                     continue;
                 }
-                foreach (iterator_to_array($element->attributes ?? []) as $attribute) {
+                // A snapshot: removing an attribute while iterating the live
+                // DOMNamedNodeMap skips the next one.
+                foreach (iterator_to_array($element->attributes) as $attribute) {
                     if (!$attribute instanceof DOMAttr) {
                         continue;
                     }
