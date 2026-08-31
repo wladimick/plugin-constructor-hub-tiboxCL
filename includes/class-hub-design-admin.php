@@ -205,6 +205,7 @@ final class HUB_Tibox_Design_Admin
                                 <?php echo esc_html($row['status'] === HUB_Tibox_Version_Store::STATUS_ARCHIVED ? 'Rollback' : 'Publicar'); ?>
                             </a>
                         <?php endif; ?>
+                        <a class="button button-small" href="<?php echo esc_url($this->export_url($post->ID, $version_id)); ?>">ZIP</a>
                     </td>
                 </tr>
             <?php endforeach; ?>
@@ -632,6 +633,19 @@ final class HUB_Tibox_Design_Admin
 
         [$class, $message] = $messages[$notice];
         printf('<div class="notice notice-%s is-dismissible"><p>%s</p></div>', esc_attr($class), esc_html($message));
+    }
+
+    /** Package export closes the loop: site to AI, or site to another site. */
+    public function export_url(int $design_id, int $version_id): string
+    {
+        return wp_nonce_url(
+            add_query_arg([
+                'action' => 'hub_tibox_export_package',
+                'design_id' => $design_id,
+                'version_id' => $version_id,
+            ], admin_url('admin-post.php')),
+            'hub_tibox_export_package_' . $design_id
+        );
     }
 
     public function publish_url(int $design_id, int $version_id): string

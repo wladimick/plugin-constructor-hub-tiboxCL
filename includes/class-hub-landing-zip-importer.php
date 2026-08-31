@@ -46,12 +46,13 @@ final class HUB_Tibox_Landing_Zip_Importer
      */
     public static function host_post_types(): array
     {
-        $types = ['hub_landing'];
-        if (class_exists('HUB_Tibox_Design')) {
-            $types[] = HUB_Tibox_Design::POST_TYPE;
+        // Once designs are unified, packages belong to HUB_Tibox_Package and the
+        // historical importer only serves the pre-migration landing type.
+        if (class_exists('HUB_Tibox_Upgrade') && HUB_Tibox_Upgrade::is_unified()) {
+            return ['hub_landing'];
         }
 
-        return array_values(array_unique($types));
+        return ['hub_landing'];
     }
 
     public function add_multipart_enctype(WP_Post $post): void
@@ -169,7 +170,7 @@ final class HUB_Tibox_Landing_Zip_Importer
         }
 
         $zip_path = (string) $uploaded['file'];
-        $result = $this->extract_validated_package($zip_path, $post_id);
+        $result = $this->extract_to($zip_path, $this->get_extract_dir($post_id), $post_id);
         @unlink($zip_path);
 
         if (is_wp_error($result)) {
@@ -182,8 +183,17 @@ final class HUB_Tibox_Landing_Zip_Importer
         update_post_meta($post_id, self::META_ORIGINAL_NAME, $original);
     }
 
-    /** @return string|WP_Error */
-    private function extract_validated_package(string $zip_path, int $post_id)
+    /**
+     * Validate and extract a ZIP into $target, atomically.
+     *
+     * Everything is inspected before a single byte is written: path traversal,
+     * symlinks, blocked config files, extension allow list and declared sizes.
+     * The archive is then written to a staging directory and swapped in, so a
+     * failure halfway through never leaves a half extracted package live.
+     *
+     * @return string|WP_Error The entry HTML relative to $target.
+     */
+    public function extract_to(string $zip_path, string $target, int $post_id = 0)
     {
         if (!class_exists('ZipArchive')) {
             return new WP_Error('hub_zip_missing', 'El servidor no tiene habilitada la extensión PHP ZipArchive.');
@@ -260,7 +270,6 @@ final class HUB_Tibox_Landing_Zip_Importer
             $manifest[] = ['index' => $i, 'path' => $safe, 'dir' => $is_dir];
         }
 
-        $target = $this->get_extract_dir($post_id);
         $staging = $target . '-staging-' . wp_generate_password(8, false, false);
         $this->rrmdir($staging);
         if (!wp_mkdir_p($staging)) {
@@ -330,7 +339,7 @@ final class HUB_Tibox_Landing_Zip_Importer
             return new WP_Error('hub_zip_entry', 'No se encontró un archivo HTML principal (index.html o un HTML en la raíz).');
         }
 
-        $this->delete_existing_folder($post_id);
+        HUB_Tibox_Filesystem::delete_directory($target);
         if (!@rename($staging, $target)) {
             $this->rrmdir($staging);
             return new WP_Error('hub_zip_swap', 'No fue posible activar el package extraído.');
@@ -585,7 +594,7 @@ final class HUB_Tibox_Landing_Zip_Importer
         return true;
     }
 
-    private function find_entry_html(string $dir): string
+    public function find_entry_html(string $dir): string
     {
         if (is_file($dir . '/index.html')) {
             return 'index.html';

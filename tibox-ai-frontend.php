@@ -66,6 +66,7 @@ require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-landing-forms.php';
 // Packages and documents.
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-landing-document.php';
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-landing-zip-importer.php';
+require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-package.php';
 
 // Historical modules, kept for sites that have not been migrated yet.
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-tibox-ai-frontend.php';

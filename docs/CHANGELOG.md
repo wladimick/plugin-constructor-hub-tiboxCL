@@ -6,6 +6,58 @@ Formato requerido desde 2026-08-28: **fecha · rama · commit · objetivo · imp
 
 ---
 
+## 2026-08-31 — Fase 4: Design Packages e IA
+
+Rama: `feat/hub-v0.5-refundacion`.
+Estado: **implementado / QA WordPress pendiente**.
+
+Contrato: [`AI-PACKAGE-CONTRACT.md`](AI-PACKAGE-CONTRACT.md).
+Ejemplo: [`examples/hub-package-hero/`](../examples/hub-package-hero/).
+
+### Objetivo
+
+Convertir "sube tu ZIP de Claude Design" en un contrato verificable. El
+importador anterior aceptaba cualquier ZIP, buscaba un HTML y lo extraía: sin
+tipo, sin versión, sin variables declaradas y sin destino.
+
+### Cambios
+
+- **`manifest.json` v1 obligatorio**, con validación de contrato, tipo, nombre y
+  variables declaradas. Un contrato futuro se rechaza en lugar de interpretarse a
+  medias.
+- **Validación de variables contra el registro real**: si el HTML usa
+  `{{PRECIO_MENSUAL}}` y el sitio no la conoce, la importación falla nombrando la
+  variable, en lugar de publicar una página que muestra llaves a un visitante.
+- **Importar crea una versión borrador**, nunca reemplaza lo publicado. El aviso
+  de éxito entrega directamente el enlace de preview firmado.
+- **Importación para todos los tipos**, no solo landings, y con destino
+  seleccionable: crear un diseño nuevo o añadir una versión a uno existente.
+- **Exportación a ZIP** desde la caja de versiones: cierra el ciclo sitio → IA y
+  sitio → sitio.
+- **Assets por versión** en `uploads/constructor-hub/packages/{diseño}/{versión}/`,
+  con render desde esa carpeta y `<base>` inyectado, más limpieza al borrar el
+  diseño.
+- `scope` declarado en el manifest activa el aislamiento CSS automáticamente.
+- El extractor seguro se generaliza (`extract_to`) y la capa de package lo
+  reutiliza sin duplicar las validaciones de seguridad.
+
+### Archivos principales
+
+`includes/class-hub-package.php`, `class-hub-landing-zip-importer.php`,
+`class-hub-render.php`, `class-hub-version-store.php`,
+`docs/AI-PACKAGE-CONTRACT.md`, `examples/hub-package-hero/`,
+`tests/test-package-manifest.php`, `tests/stubs-wp.php`.
+
+### QA
+
+PHPCS y PHPStan nivel 5 sin errores; 42 aserciones, incluidas 12 nuevas sobre la
+validación del manifest y una que verifica que el package de ejemplo del
+repositorio sigue siendo válido.
+
+Pendiente: importar un proyecto real de Claude Design en un WordPress real.
+
+---
+
 ## 2026-08-31 — Fase 3: landings y formularios
 
 Rama: `feat/hub-v0.5-refundacion`.

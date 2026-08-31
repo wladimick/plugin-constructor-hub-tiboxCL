@@ -259,6 +259,28 @@ final class HUB_Tibox_Version_Store
         return is_array($rows) ? $rows : [];
     }
 
+    /**
+     * Attach extracted package assets to an existing version.
+     *
+     * The directory is named after the version id, which only exists once the
+     * row has been written, so this is a second step rather than a parameter.
+     */
+    public function update_assets(int $version_id, string $asset_dir, string $entry): void
+    {
+        global $wpdb;
+
+        $wpdb->update(
+            $this->table_name(),
+            [
+                'asset_dir' => sanitize_text_field($asset_dir),
+                'entry' => sanitize_text_field($entry),
+            ],
+            ['id' => $version_id],
+            ['%s', '%s'],
+            ['%d']
+        );
+    }
+
     public function delete_for_design(int $design_id): void
     {
         global $wpdb;

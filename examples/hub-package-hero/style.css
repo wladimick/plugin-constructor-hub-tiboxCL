@@ -1,0 +1,86 @@
+/*
+ * Reglas de estilo del hero de ejemplo.
+ *
+ * Todos los valores vienen de tokens --hub-*. Un componente que escribe
+ * #0f172a en lugar de var(--hub-primary) deja de ser portable en el momento
+ * en que se instala en otro cliente.
+ */
+
+.hero {
+    background: var(--hub-primary, #1f2937);
+    color: #fff;
+    padding: var(--hub-section-space, 80px) var(--hub-gutter, 24px);
+}
+
+.hero__shell {
+    max-width: var(--hub-container, 1200px);
+    margin: 0 auto;
+    display: grid;
+    gap: 18px;
+}
+
+.hero__eyebrow {
+    margin: 0;
+    font-family: var(--hub-font-body, system-ui, sans-serif);
+    font-size: 13px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    opacity: 0.72;
+}
+
+.hero__title {
+    margin: 0;
+    font-family: var(--hub-font-heading, system-ui, sans-serif);
+    font-size: clamp(32px, 5vw, 56px);
+    line-height: 1.06;
+    text-wrap: balance;
+}
+
+.hero__lede {
+    margin: 0;
+    max-width: 60ch;
+    font-family: var(--hub-font-body, system-ui, sans-serif);
+    font-size: var(--hub-text-base, 17px);
+    line-height: var(--hub-line-height, 1.6);
+    opacity: 0.88;
+}
+
+.hero__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px 22px;
+    align-items: center;
+    margin-top: 10px;
+}
+
+.hero__cta {
+    background: var(--hub-accent, #2563eb);
+    color: #fff;
+    text-decoration: none;
+    padding: 13px 26px;
+    border-radius: var(--hub-radius-md, 10px);
+    font-weight: 600;
+}
+
+.hero__cta:focus-visible,
+.hero__link:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 3px;
+}
+
+.hero__link {
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    opacity: 0.8;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .hero__cta {
+        transition: transform 0.18s ease;
+    }
+
+    .hero__cta:hover {
+        transform: translateY(-1px);
+    }
+}

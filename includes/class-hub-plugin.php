@@ -68,6 +68,7 @@ final class HUB_Tibox_Plugin
         HUB_Tibox_Render::instance();
         HUB_Tibox_Insertion::instance();
         HUB_Tibox_Design_System::instance();
+        HUB_Tibox_Package::instance();
         HUB_Tibox_Elementor_Adapter::instance();
 
         if (is_admin()) {

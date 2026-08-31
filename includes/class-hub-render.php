@@ -213,12 +213,18 @@ final class HUB_Tibox_Render
             return;
         }
 
-        if (HUB_Tibox_Design::get_render_mode($design_id) !== HUB_Tibox_Design::MODE_STANDALONE) {
+        $mode = HUB_Tibox_Design::get_render_mode($design_id);
+        if (!in_array($mode, [HUB_Tibox_Design::MODE_STANDALONE, HUB_Tibox_Design::MODE_PACKAGE], true)) {
             return;
         }
 
         $version = HUB_Tibox_Preview::version_for($design_id);
         if ($version === null) {
+            return;
+        }
+
+        if ($mode === HUB_Tibox_Design::MODE_PACKAGE) {
+            $this->render_package($design_id, $version);
             return;
         }
 
@@ -228,6 +234,48 @@ final class HUB_Tibox_Render
         }
 
         HUB_Tibox_Landing_Document::render($html, $design_id);
+    }
+
+    /**
+     * A package is served from its own directory so relative asset paths keep
+     * working. The HTML on disk is authoritative; the stored copy is what the
+     * editor and the exporter use.
+     *
+     * @param array<string,mixed> $version
+     */
+    private function render_package(int $design_id, array $version): void
+    {
+        $entry = (string) ($version['entry'] ?? '');
+        if ($entry === '') {
+            return;
+        }
+
+        $package = HUB_Tibox_Package::instance();
+        $file = trailingslashit($package->package_dir($design_id, (int) $version['id'])) . $entry;
+
+        if (!is_file($file)) {
+            // Falls back to the stored HTML: a missing directory must not turn
+            // a live landing into a blank page.
+            $html = trim((string) ($version['html'] ?? ''));
+            if ($html !== '') {
+                HUB_Tibox_Landing_Document::render($html, $design_id);
+            }
+
+            return;
+        }
+
+        $html = file_get_contents($file);
+        if ($html === false) {
+            return;
+        }
+
+        $base = $package->package_url($design_id, (int) $version['id']);
+        $entry_dir = dirname($entry);
+        if ($entry_dir !== '.' && $entry_dir !== '') {
+            $base .= trailingslashit($entry_dir);
+        }
+
+        HUB_Tibox_Landing_Document::render($html, $design_id, $base);
     }
 
     public function body_class(array $classes): array
