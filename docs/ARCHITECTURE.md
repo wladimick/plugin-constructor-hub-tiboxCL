@@ -187,6 +187,12 @@ funcionalidad sin que nadie se entere.
   completo no tuvo fallos, publica los nuevos diseños y retira los históricos
   (cutover). Una migración parcial nunca activa el modelo unificado ni deja
   contenido invisible: el sitio sigue exactamente como estaba.
+- El stage de cada objeto verifica sus pasos indispensables uno a uno —crear
+  la versión, publicarla, copiar el package si corresponde— antes de marcarlo
+  `_hub_migration_staged`. Un `Version_Store::create()` que devuelve `0` o una
+  copia de package que falla convierten el ítem en `failed`, nunca en
+  `created`; el diseño creado queda identificable (sin esa marca) para que un
+  reintento lo reanude en vez de duplicarlo.
 - La unificación es reversible con `HUB_Tibox_Upgrade::rollback_to_legacy()`
   (`Constructor HUB → Diagnóstico` o `wp hub rollback-to-legacy`), que restaura
   el estado que tenía cada objeto histórico antes del cutover, no solo apaga

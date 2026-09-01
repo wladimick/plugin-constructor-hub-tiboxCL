@@ -6,6 +6,105 @@ Formato requerido desde 2026-08-28: **fecha · rama · commit · objetivo · imp
 
 ---
 
+## 2026-09-01 — Tercera revisión del PR #7: stage transaccional
+
+Rama: `feat/hub-v0.5-refundacion`.
+Estado: **implementado / QA WordPress pendiente**.
+
+Origen: quinto hallazgo de la segunda auditoría sobre el PR #7, encontrado
+después de corregir los cuatro primeros (rollback, migración parcial, menú de
+Correo, orden de arranque).
+
+### El problema
+
+`stage_component()`/`stage_landing()` llamaban a `seed_version()` y a
+`move_package_directory()` y devolvían `status=created` sin mirar qué
+devolvían. `seed_version()` era `void`: si
+`HUB_Tibox_Version_Store::create()` devolvía `0` por un error de base de
+datos, o si `publish()` devolvía `false`, el ítem se reportaba igual como
+`created`, con un diseño sin versión utilizable. Lo mismo con
+`HUB_Tibox_Filesystem::copy_directory()`: su valor de retorno (`bool`) se
+ignoraba, así que una copia de package fallida dejaba un `entry` apuntando a
+archivos que nunca se copiaron.
+
+Con la migración en dos fases ya introducida, esto era peor que un bug
+cosmético: un ítem mal clasificado como `created` hace que
+`evaluate_migration_result()` lo cuente como éxito, lo que podía activar el
+cutover —y por tanto `hub_tibox_designs_unified`— sobre un diseño roto.
+
+### La corrección
+
+El stage de cada objeto pasa a ser una tubería verificada paso a paso:
+
+```text
+crear hub_design (o reanudar uno incompleto de un intento anterior)
+→ copiar metadata
+→ crear versión       → verificar (Version_Store::create() > 0)
+→ publicar versión    → verificar (Version_Store::publish() === true)
+→ copiar package si corresponde → verificar (copy_directory() === true)
+→ recién entonces status=created, y se marca _hub_migration_staged
+```
+
+Cualquier paso indispensable que falle:
+
+- devuelve `status=failed` con un error accionable (qué diseño, qué paso, por
+  qué);
+- nunca llega a marcar `_hub_migration_staged`, con lo que
+  `evaluate_migration_result()` lo clasifica correctamente como fallo y el
+  cutover completo no se ejecuta;
+- deja el diseño creado **identificable** en lugar de borrarlo: un
+  `hub_design` con `_hub_legacy_source_id` pero sin `_hub_migration_staged` es,
+  por definición, un intento incompleto.
+
+`seed_version()` y `move_package_directory()` ahora devuelven
+`array{status,error}` en vez de `void`, y cada uno delega la decisión a un
+clasificador puro y estático, sin llamadas a WordPress:
+
+- `HUB_Tibox_Upgrade::evaluate_version_write()` distingue explícitamente un
+  fallo de `create()` (no hay versión) de un fallo de `publish()` (la versión
+  existe pero no se pudo promover) — son errores distintos y merecían mensajes
+  distintos.
+- `HUB_Tibox_Upgrade::evaluate_package_copy()` distingue un package no
+  declarado (skip legítimo) de un directorio origen ausente en disco y de una
+  copia que falló.
+
+### Retry idempotente sin duplicar filas
+
+Antes, un reintento repetía `wp_insert_post()` para cualquier legacy que no
+apareciera como "existente", lo que habría creado un `hub_design` nuevo cada
+vez que el mismo ítem volviera a fallar tras el punto de creación. Ahora
+`find_migrated()` solo cuenta como migrado un diseño con
+`_hub_migration_staged = '1'`; un diseño con la metadata de origen pero sin esa
+marca se localiza con el nuevo `find_staged_design_id()` y se **reanuda** —se
+reintentan solo los pasos que faltan— en lugar de duplicarse.
+
+### Archivos principales
+
+`includes/class-hub-upgrade.php`, `tests/test-upgrade-stage-transaction.php`.
+
+### Compatibilidad
+
+- Nuevo meta `_hub_migration_staged` en los diseños creados por la migración.
+  No afecta instalaciones que ya completaron una migración antes de este
+  cambio: `run_and_record_migration()` solo vuelve a ejecutar el stage
+  mientras `hub_tibox_designs_unified` siga en `0`.
+
+### QA
+
+87 aserciones (21 nuevas): `evaluate_version_write()` cubre el fallo de
+`create()`, el fallo de `publish()` y el éxito, con mensajes distinguibles
+entre sí; `evaluate_package_copy()` cubre el skip legítimo, el directorio
+origen ausente y la copia fallida; un grupo adicional simula el reintento
+exitoso tras un primer intento fallido, a nivel de clasificador y a nivel del
+resumen del lote. PHPCS y PHPStan nivel 5 sin errores.
+
+Lo que esto **no** cubre —y no puede cubrir sin una base de datos real— es que
+`find_staged_design_id()` efectivamente reutilice la misma fila en un
+WordPress real en vez de crear un duplicado: eso, como el cutover y el
+rollback, queda para la Fase 7.
+
+---
+
 ## 2026-09-01 — Segunda revisión del PR #7: migración de dos fases y rollback real
 
 Rama: `feat/hub-v0.5-refundacion`.

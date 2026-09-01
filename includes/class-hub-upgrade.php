@@ -16,8 +16,15 @@ if (!defined('ABSPATH')) {
  *
  *  - **Stage**: every not-yet-migrated legacy object gets copied into a new
  *    `hub_design` post, created as a draft. The legacy object is never
- *    touched here. A `wp_insert_post()` failure, or any other per-item error,
- *    is recorded and does not stop the rest of the batch from staging.
+ *    touched here. Staging itself is a short pipeline — create the post, copy
+ *    its metadata, create the version, publish the version, copy the package
+ *    when one applies — and every indispensable step is verified: a design is
+ *    only marked `created` once all of them have actually succeeded. A
+ *    `wp_insert_post()` failure, a version the store could not create or
+ *    publish, or a package that could not be copied, are all recorded as a
+ *    failure for that item and do not stop the rest of the batch from
+ *    staging. A design left incomplete by a failure is never mistaken for a
+ *    finished one on retry — see `META_STAGED`.
  *  - **Cutover**: only when staging produced zero failures, each legacy
  *    object's original status is recorded on itself (so it can be restored
  *    later), the new design is published with that same status, and the
@@ -45,6 +52,16 @@ final class HUB_Tibox_Upgrade
 
     /** Recorded on the LEGACY post so a rollback knows what to restore. */
     private const META_PREVIOUS_STATUS = '_hub_migration_previous_status';
+
+    /**
+     * Recorded on the NEW design only once every indispensable staging step —
+     * version creation, version publish, and the package copy when one applies
+     * — has succeeded. A design row can exist without this flag: that is a
+     * staged-but-incomplete row left over from a failed attempt, identifiable
+     * by carrying `META_LEGACY_ID` without it. A retry resumes that same row
+     * instead of creating a duplicate.
+     */
+    private const META_STAGED = '_hub_migration_staged';
 
     private const LEGACY_COMPONENT = 'hub_component';
     private const LEGACY_LANDING = 'hub_landing';
@@ -230,30 +247,44 @@ final class HUB_Tibox_Upgrade
             return $this->item(self::LEGACY_COMPONENT, $legacy_id, 'missing');
         }
 
-        $type = (string) get_post_meta($legacy_id, '_hub_component_type', true);
-        if (!in_array($type, ['header', 'footer'], true)) {
-            $type = 'header';
+        // A row from a previous attempt that never reached META_STAGED is
+        // resumed rather than recreated — otherwise every retry of a failure
+        // that happened after the design was inserted would leave one more
+        // orphaned draft behind.
+        $design_id = $this->find_staged_design_id($legacy_id, self::LEGACY_COMPONENT);
+
+        if ($design_id <= 0) {
+            $type = (string) get_post_meta($legacy_id, '_hub_component_type', true);
+            if (!in_array($type, ['header', 'footer'], true)) {
+                $type = 'header';
+            }
+
+            $design_id = $this->stage_design($legacy, $type);
+            if (is_wp_error($design_id)) {
+                return $this->item(self::LEGACY_COMPONENT, $legacy_id, 'failed', 0, $design_id->get_error_message());
+            }
+
+            update_post_meta($design_id, HUB_Tibox_Design::META_LEGACY_ID, $legacy_id);
+            update_post_meta($design_id, HUB_Tibox_Design::META_LEGACY_TYPE, self::LEGACY_COMPONENT);
+            update_post_meta($design_id, HUB_Tibox_Design::META_RENDER_MODE, HUB_Tibox_Design::MODE_HUB);
+            // Existing components were authored without isolation and may rely
+            // on styling the theme's markup. Turning scoping on silently would
+            // change how they render.
+            update_post_meta($design_id, HUB_Tibox_Design::META_CSS_SCOPE, '0');
         }
 
-        $design_id = $this->stage_design($legacy, $type);
-        if (is_wp_error($design_id)) {
-            return $this->item(self::LEGACY_COMPONENT, $legacy_id, 'failed', 0, $design_id->get_error_message());
-        }
-
-        update_post_meta($design_id, HUB_Tibox_Design::META_LEGACY_ID, $legacy_id);
-        update_post_meta($design_id, HUB_Tibox_Design::META_LEGACY_TYPE, self::LEGACY_COMPONENT);
-        update_post_meta($design_id, HUB_Tibox_Design::META_RENDER_MODE, HUB_Tibox_Design::MODE_HUB);
-        // Existing components were authored without isolation and may rely on
-        // styling the theme's markup. Turning scoping on silently would change
-        // how they render.
-        update_post_meta($design_id, HUB_Tibox_Design::META_CSS_SCOPE, '0');
-
-        $this->seed_version($design_id, [
+        $version = $this->seed_version($design_id, [
             'html' => (string) get_post_meta($legacy_id, '_hub_component_html', true),
             'css' => (string) get_post_meta($legacy_id, '_hub_component_css', true),
             'js' => (string) get_post_meta($legacy_id, '_hub_component_js', true),
             'label' => 'Migrada desde hub_component #' . $legacy_id,
         ]);
+
+        if ($version['status'] === 'failed') {
+            return $this->item(self::LEGACY_COMPONENT, $legacy_id, 'failed', $design_id, $version['error']);
+        }
+
+        update_post_meta($design_id, self::META_STAGED, '1');
 
         return $this->item(self::LEGACY_COMPONENT, $legacy_id, 'created', $design_id);
     }
@@ -273,11 +304,6 @@ final class HUB_Tibox_Upgrade
             return $this->item(self::LEGACY_LANDING, $legacy_id, 'missing');
         }
 
-        $design_id = $this->stage_design($legacy, 'landing');
-        if (is_wp_error($design_id)) {
-            return $this->item(self::LEGACY_LANDING, $legacy_id, 'failed', 0, $design_id->get_error_message());
-        }
-
         $mode = (string) get_post_meta($legacy_id, '_hub_landing_mode', true);
         $modes = [
             'legacy' => HUB_Tibox_Design::MODE_LEGACY,
@@ -287,47 +313,73 @@ final class HUB_Tibox_Upgrade
         ];
         $mode = $modes[$mode] ?? HUB_Tibox_Design::MODE_HUB;
 
-        update_post_meta($design_id, HUB_Tibox_Design::META_LEGACY_ID, $legacy_id);
-        update_post_meta($design_id, HUB_Tibox_Design::META_LEGACY_TYPE, self::LEGACY_LANDING);
-        update_post_meta($design_id, HUB_Tibox_Design::META_RENDER_MODE, $mode);
-        update_post_meta($design_id, HUB_Tibox_Design::META_CSS_SCOPE, '0');
-        update_post_meta(
-            $design_id,
-            HUB_Tibox_Design::META_USE_CHROME,
-            get_post_meta($legacy_id, '_hub_landing_use_hub_chrome', true) === '1' ? '1' : '0'
-        );
+        // A row from a previous attempt that never reached META_STAGED is
+        // resumed rather than recreated — otherwise every retry of a failure
+        // that happened after the design was inserted would leave one more
+        // orphaned draft behind.
+        $design_id = $this->find_staged_design_id($legacy_id, self::LEGACY_LANDING);
 
-        $this->copy_meta($legacy_id, $design_id, [
-            '_hub_landing_recipient_emails' => HUB_Tibox_Design::META_RECIPIENTS,
-            '_hub_landing_confirmation' => HUB_Tibox_Design::META_CONFIRMATION,
-            '_hub_landing_success_message' => HUB_Tibox_Design::META_SUCCESS_MESSAGE,
-            '_hub_landing_required_fields' => HUB_Tibox_Design::META_REQUIRED_FIELDS,
-            '_hub_landing_ads_active' => HUB_Tibox_Design::META_ADS_ACTIVE,
-            '_hub_landing_ads_campaign_name' => HUB_Tibox_Design::META_ADS_CAMPAIGN_NAME,
-            '_hub_landing_ads_campaign_id' => HUB_Tibox_Design::META_ADS_CAMPAIGN_ID,
-            '_hub_landing_ads_start_date' => HUB_Tibox_Design::META_ADS_START_DATE,
-            '_hub_landing_ads_end_date' => HUB_Tibox_Design::META_ADS_END_DATE,
-            '_hub_landing_ads_final_url' => HUB_Tibox_Design::META_ADS_FINAL_URL,
-            '_hub_landing_ads_notes' => HUB_Tibox_Design::META_ADS_NOTES,
-            '_hub_legacy_landing_id' => '_hub_legacy_landing_id',
-            '_hub_landing_zip_folder' => '_hub_landing_zip_folder',
-            '_hub_landing_zip_entry' => '_hub_landing_zip_entry',
-            '_hub_landing_zip_original_name' => '_hub_landing_zip_original_name',
-        ]);
+        if ($design_id <= 0) {
+            $design_id = $this->stage_design($legacy, 'landing');
+            if (is_wp_error($design_id)) {
+                return $this->item(self::LEGACY_LANDING, $legacy_id, 'failed', 0, $design_id->get_error_message());
+            }
 
-        $this->move_package_directory($legacy_id, $design_id);
+            update_post_meta($design_id, HUB_Tibox_Design::META_LEGACY_ID, $legacy_id);
+            update_post_meta($design_id, HUB_Tibox_Design::META_LEGACY_TYPE, self::LEGACY_LANDING);
+            update_post_meta($design_id, HUB_Tibox_Design::META_RENDER_MODE, $mode);
+            update_post_meta($design_id, HUB_Tibox_Design::META_CSS_SCOPE, '0');
+            update_post_meta(
+                $design_id,
+                HUB_Tibox_Design::META_USE_CHROME,
+                get_post_meta($legacy_id, '_hub_landing_use_hub_chrome', true) === '1' ? '1' : '0'
+            );
 
+            $this->copy_meta($legacy_id, $design_id, [
+                '_hub_landing_recipient_emails' => HUB_Tibox_Design::META_RECIPIENTS,
+                '_hub_landing_confirmation' => HUB_Tibox_Design::META_CONFIRMATION,
+                '_hub_landing_success_message' => HUB_Tibox_Design::META_SUCCESS_MESSAGE,
+                '_hub_landing_required_fields' => HUB_Tibox_Design::META_REQUIRED_FIELDS,
+                '_hub_landing_ads_active' => HUB_Tibox_Design::META_ADS_ACTIVE,
+                '_hub_landing_ads_campaign_name' => HUB_Tibox_Design::META_ADS_CAMPAIGN_NAME,
+                '_hub_landing_ads_campaign_id' => HUB_Tibox_Design::META_ADS_CAMPAIGN_ID,
+                '_hub_landing_ads_start_date' => HUB_Tibox_Design::META_ADS_START_DATE,
+                '_hub_landing_ads_end_date' => HUB_Tibox_Design::META_ADS_END_DATE,
+                '_hub_landing_ads_final_url' => HUB_Tibox_Design::META_ADS_FINAL_URL,
+                '_hub_landing_ads_notes' => HUB_Tibox_Design::META_ADS_NOTES,
+                '_hub_legacy_landing_id' => '_hub_legacy_landing_id',
+                '_hub_landing_zip_folder' => '_hub_landing_zip_folder',
+                '_hub_landing_zip_entry' => '_hub_landing_zip_entry',
+                '_hub_landing_zip_original_name' => '_hub_landing_zip_original_name',
+            ]);
+        }
+
+        // The version is the design's content; without it the object is
+        // useless even if a package eventually copies fine, so it is created
+        // — and verified — before the package step, matching the order a
+        // failure should be reported in.
         $html = $mode === HUB_Tibox_Design::MODE_STANDALONE
             ? (string) get_post_meta($legacy_id, '_hub_landing_full_html', true)
             : (string) get_post_meta($legacy_id, '_hub_landing_html', true);
 
-        $this->seed_version($design_id, [
+        $version = $this->seed_version($design_id, [
             'html' => $html,
             'css' => (string) get_post_meta($legacy_id, '_hub_landing_css', true),
             'js' => (string) get_post_meta($legacy_id, '_hub_landing_js', true),
             'entry' => (string) get_post_meta($legacy_id, '_hub_landing_zip_entry', true),
             'label' => 'Migrada desde hub_landing #' . $legacy_id,
         ]);
+
+        if ($version['status'] === 'failed') {
+            return $this->item(self::LEGACY_LANDING, $legacy_id, 'failed', $design_id, $version['error']);
+        }
+
+        $package = $this->move_package_directory($legacy_id, $design_id);
+        if ($package['status'] === 'failed') {
+            return $this->item(self::LEGACY_LANDING, $legacy_id, 'failed', $design_id, $package['error']);
+        }
+
+        update_post_meta($design_id, self::META_STAGED, '1');
 
         return $this->item(self::LEGACY_LANDING, $legacy_id, 'created', $design_id);
     }
@@ -433,34 +485,96 @@ final class HUB_Tibox_Upgrade
      *
      * The directory is named after the version id, which only exists once the
      * row has been written, so this is a second step rather than a parameter.
+     *
+     * A ZIP entry declared on the legacy object with no backing directory on
+     * disk is not silently skipped: the design's `entry` meta would point at
+     * files that do not exist, which breaks rendering the moment it goes live.
+     *
+     * @return array{status:string,error:string} status: 'ok'|'skipped'|'failed'
      */
-    private function move_package_directory(int $legacy_id, int $design_id): void
+    private function move_package_directory(int $legacy_id, int $design_id): array
     {
-        if ((string) get_post_meta($legacy_id, '_hub_landing_zip_entry', true) === '') {
-            return;
+        $entry = (string) get_post_meta($legacy_id, '_hub_landing_zip_entry', true);
+        if ($entry === '') {
+            return self::evaluate_package_copy($legacy_id, $design_id, $entry, '', true, null);
         }
 
         $importer = HUB_Tibox_Landing_Zip_Importer::instance();
         $source = $importer->get_extract_dir($legacy_id);
-        if (!is_dir($source)) {
-            return;
+        $source_exists = is_dir($source);
+
+        $copied = $source_exists
+            ? HUB_Tibox_Filesystem::copy_directory($source, $importer->get_extract_dir($design_id))
+            : null;
+
+        $result = self::evaluate_package_copy($legacy_id, $design_id, $entry, $source, $source_exists, $copied);
+
+        if ($result['status'] === 'ok') {
+            update_post_meta($design_id, '_hub_landing_zip_folder', (string) $design_id);
         }
 
-        HUB_Tibox_Filesystem::copy_directory($source, $importer->get_extract_dir($design_id));
-        update_post_meta($design_id, '_hub_landing_zip_folder', (string) $design_id);
+        return $result;
     }
 
     /**
-     * @param array<string,mixed> $data
+     * Pure classification of a package copy attempt, given its already-known
+     * outcome. No WordPress or filesystem calls — this is what "fallo
+     * copiando package" is unit tested against.
+     *
+     * A ZIP entry declared on the legacy object with no backing directory on
+     * disk is not silently skipped: the design's `entry` meta would point at
+     * files that do not exist, which breaks rendering the moment it goes live.
+     *
+     * @return array{status:string,error:string} status: 'ok'|'skipped'|'failed'
      */
-    private function seed_version(int $design_id, array $data): void
+    public static function evaluate_package_copy(
+        int $legacy_id,
+        int $design_id,
+        string $entry,
+        string $source_dir,
+        bool $source_exists,
+        ?bool $copied
+    ): array {
+        if ($entry === '') {
+            return ['status' => 'skipped', 'error' => ''];
+        }
+
+        if (!$source_exists) {
+            return [
+                'status' => 'failed',
+                'error' => sprintf('El package del legacy #%d no se encontró en disco (%s).', $legacy_id, $source_dir),
+            ];
+        }
+
+        if ($copied !== true) {
+            return [
+                'status' => 'failed',
+                'error' => sprintf('No fue posible copiar el package del legacy #%d al diseño #%d.', $legacy_id, $design_id),
+            ];
+        }
+
+        return ['status' => 'ok', 'error' => ''];
+    }
+
+    /**
+     * Creates and publishes the first version for a staged design.
+     *
+     * Content-free objects are a legitimate migration source (a component
+     * nobody ever filled in), so having nothing to seed is not a failure —
+     * only a `Version_Store` write that was attempted and did not succeed is.
+     *
+     * @param array<string,mixed> $data
+     * @return array{status:string,error:string} status: 'ok'|'skipped'|'failed'
+     */
+    private function seed_version(int $design_id, array $data): array
     {
         $html = (string) ($data['html'] ?? '');
         $css = (string) ($data['css'] ?? '');
         $js = (string) ($data['js'] ?? '');
+        $entry = (string) ($data['entry'] ?? '');
 
-        if (trim($html . $css . $js) === '' && (string) ($data['entry'] ?? '') === '') {
-            return;
+        if (trim($html . $css . $js) === '' && $entry === '') {
+            return ['status' => 'skipped', 'error' => ''];
         }
 
         $store = HUB_Tibox_Version_Store::instance();
@@ -468,14 +582,45 @@ final class HUB_Tibox_Upgrade
             'html' => $html,
             'css' => $css,
             'js' => $js,
-            'entry' => (string) ($data['entry'] ?? ''),
+            'entry' => $entry,
             'source' => 'migration',
             'label' => (string) ($data['label'] ?? ''),
         ]);
 
-        if ($version_id > 0) {
-            $store->publish($design_id, $version_id);
+        // Never call publish() when there is nothing to publish: create()
+        // returning 0 already means the write failed, and publish() would
+        // otherwise be asked to promote a version id that does not exist.
+        $published = $version_id > 0 && $store->publish($design_id, $version_id);
+
+        return self::evaluate_version_write($design_id, $version_id, $published);
+    }
+
+    /**
+     * Pure classification of a `Version_Store` write, given its already-known
+     * outcome. No WordPress calls — this is what "fallo creando versión" and
+     * "fallo publicando versión" are unit tested against, as the two distinct
+     * failure modes they are: `create()` returning `0` is a different problem
+     * from `publish()` returning `false` for a version that does exist.
+     *
+     * @return array{status:string,error:string} status: 'ok'|'failed'
+     */
+    public static function evaluate_version_write(int $design_id, int $version_id, bool $published): array
+    {
+        if ($version_id <= 0) {
+            return [
+                'status' => 'failed',
+                'error' => sprintf('No fue posible crear la versión migrada para el diseño #%d.', $design_id),
+            ];
         }
+
+        if (!$published) {
+            return [
+                'status' => 'failed',
+                'error' => sprintf('La versión #%d del diseño #%d se creó pero no pudo publicarse.', $version_id, $design_id),
+            ];
+        }
+
+        return ['status' => 'ok', 'error' => ''];
     }
 
     /** Carries the previous Header/Footer selection into the region model. */
@@ -602,7 +747,37 @@ final class HUB_Tibox_Upgrade
         exit;
     }
 
+    /**
+     * A design counts as "already migrated" only once every indispensable
+     * staging step succeeded. A row that exists but never reached
+     * `META_STAGED` is a leftover from a failed attempt, not a finished
+     * migration — see `find_staged_design_id()` for that case.
+     */
     private function find_migrated(int $legacy_id, string $legacy_type): int
+    {
+        $found = get_posts([
+            'post_type' => HUB_Tibox_Design::POST_TYPE,
+            'post_status' => 'any',
+            'posts_per_page' => 1,
+            'fields' => 'ids',
+            'no_found_rows' => true,
+            'meta_query' => [
+                'relation' => 'AND',
+                ['key' => HUB_Tibox_Design::META_LEGACY_ID, 'value' => (string) $legacy_id],
+                ['key' => HUB_Tibox_Design::META_LEGACY_TYPE, 'value' => $legacy_type],
+                ['key' => self::META_STAGED, 'value' => '1'],
+            ],
+        ]);
+
+        return $found === [] ? 0 : (int) $found[0];
+    }
+
+    /**
+     * Any design row created for this legacy object, complete or not. Used to
+     * resume a staged-but-incomplete row on retry instead of inserting a
+     * duplicate `hub_design` post every time the same failure is hit.
+     */
+    private function find_staged_design_id(int $legacy_id, string $legacy_type): int
     {
         $found = get_posts([
             'post_type' => HUB_Tibox_Design::POST_TYPE,
