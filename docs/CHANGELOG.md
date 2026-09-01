@@ -6,6 +6,101 @@ Formato requerido desde 2026-08-28: **fecha · rama · commit · objetivo · imp
 
 ---
 
+## 2026-09-01 — Cuarta revisión del PR #7: el mismo defecto en el migrador WPCode
+
+Rama: `feat/hub-v0.5-refundacion`.
+Estado: **implementado / QA WordPress pendiente**.
+
+Origen: último hallazgo antes de iniciar la Fase 7. `HUB_Tibox_Legacy_Migrator`
+—el migrador de WPCode (`tibox_landing`) hacia `hub_design`, un flujo distinto
+del que corrige `HUB_Tibox_Upgrade` para `hub_component`/`hub_landing`— tenía
+exactamente el mismo defecto que se acababa de corregir ahí: `migrate_landing()`
+podía devolver un `design_id` válido aunque fallara la creación o publicación
+de la versión, o la copia del package. Como este flujo forma parte de la
+Fase 5 que el PR ya declaraba implementada, quedaba dentro del alcance a
+cerrar antes del QA real.
+
+### La corrección
+
+`migrate_landing()` sigue ahora la misma tubería verificada:
+
+```text
+crear/reanudar hub_design → copiar metadata
+→ crear versión    → verificar (Version_Store::create() > 0)
+→ publicar versión → verificar (Version_Store::publish() === true)
+→ copiar package si corresponde → verificar (copy_directory() === true)
+→ recién entonces se marca _hub_wpcode_migration_staged
+```
+
+Reutiliza literalmente los clasificadores puros ya escritos para
+`HUB_Tibox_Upgrade`: `HUB_Tibox_Upgrade::evaluate_version_write()` y
+`::evaluate_package_copy()`. La combinación de ambos en un veredicto final es
+`HUB_Tibox_Legacy_Migrator::evaluate_stage_result()`, nueva y pública, del
+mismo modo puro y estático.
+
+Si cualquier paso falla, `migrate_landing()` devuelve `0`: la landing sigue
+apareciendo como pendiente en `pending_landing_ids()` y en la tabla de
+**Migración WPCode**, `run_migration()` no la cuenta como creada, y un
+reintento la localiza por `_hub_legacy_landing_id` —sin la marca de completado—
+y **reanuda** el mismo `hub_design` en vez de insertar uno duplicado. Antes de
+esta corrección, `find_migrated()` consideraba "ya migrado" cualquier diseño
+con esa metadata, completo o no, así que un ítem fallido nunca se habría podido
+reintentar sin dejar un duplicado.
+
+`copy_elementor_meta()` y `copy_meta()` —ambos usan `add_post_meta()`, que
+admite valores repetidos— solo se ejecutan en la creación inicial del diseño,
+nunca al reanudar uno existente: de lo contrario cada reintento habría
+duplicado esa metadata.
+
+### `run_cutover()`: verificación independiente
+
+Además de la corrección anterior, `run_cutover()` ya no confía únicamente en
+que el diseño esté marcado como migrado. Antes de traspasar la URL comprueba
+—con `HUB_Tibox_Legacy_Migrator::evaluate_cutover_readiness()`, también puro—
+que la versión **publicada** del diseño sea realmente utilizable:
+
+- que exista una versión live;
+- en modo `package`, que declare un `entry` y que ese archivo esté
+  efectivamente en disco;
+- en modo HUB o HTML completo, que la versión tenga contenido HTML;
+- en modo `legacy` (theme/Elementor vía `the_content()`) no exige contenido
+  propio, porque el diseño no es quien renderiza ahí.
+
+Esto protege también contra el caso en que un diseño se marcó completo
+correctamente en su momento, pero su versión live cambió o se perdió después
+—por ejemplo, si alguien la editó desde Constructor HUB sin publicar la
+versión nueva.
+
+### Archivos principales
+
+`includes/class-hub-legacy-migrator.php`,
+`tests/test-legacy-migrator-stage.php`.
+
+### Compatibilidad
+
+- Nuevo meta `_hub_wpcode_migration_staged` en los diseños creados por este
+  migrador. Nombre deliberadamente distinto del `_hub_migration_staged` de
+  `HUB_Tibox_Upgrade`: son dos migradores independientes con dos orígenes
+  históricos distintos.
+- No afecta instalaciones que ya completaron una migración WPCode antes de
+  este cambio: `find_migrated()` solo exige la marca nueva para landings que
+  se migren o reintenten después de este código.
+
+### QA
+
+104 aserciones (17 nuevas): fallo de `create()`, fallo de `publish()`, fallo de
+copia de package, ausencia legítima de package, éxito, reintento exitoso tras
+un primer fallo, y los cuatro escenarios de `evaluate_cutover_readiness()`
+(sin versión live, HUB sin contenido, legacy sin contenido —válido—, package
+sin archivo en disco, package con archivo presente). PHPCS y PHPStan nivel 5
+sin errores.
+
+Lo que esto no cubre —y no puede cubrir sin una base de datos real— es que
+`find_staged_design_id()` efectivamente reutilice la misma fila en WordPress en
+vez de crear un duplicado: Fase 7, igual que el resto de esta migración.
+
+---
+
 ## 2026-09-01 — Tercera revisión del PR #7: stage transaccional
 
 Rama: `feat/hub-v0.5-refundacion`.

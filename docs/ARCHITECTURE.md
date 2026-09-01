@@ -193,6 +193,13 @@ funcionalidad sin que nadie se entere.
   copia de package que falla convierten el ítem en `failed`, nunca en
   `created`; el diseño creado queda identificable (sin esa marca) para que un
   reintento lo reanude en vez de duplicarlo.
+- La migración desde WPCode (`HUB_Tibox_Legacy_Migrator`, un origen histórico
+  distinto: `tibox_landing`, no `hub_component`/`hub_landing`) sigue el mismo
+  principio: `migrate_landing()` solo reporta una landing como migrada cuando
+  su versión se creó, se publicó y su package —si lo tiene— se copió; de lo
+  contrario la landing sigue pendiente y reintentable, y `run_cutover()`
+  vuelve a verificar de forma independiente que la versión publicada del
+  diseño sea realmente renderizable antes de traspasar la URL.
 - La unificación es reversible con `HUB_Tibox_Upgrade::rollback_to_legacy()`
   (`Constructor HUB → Diagnóstico` o `wp hub rollback-to-legacy`), que restaura
   el estado que tenía cada objeto histórico antes del cutover, no solo apaga
