@@ -6,6 +6,117 @@ Formato requerido desde 2026-08-28: **fecha · rama · commit · objetivo · imp
 
 ---
 
+## 2026-09-01 — Segunda revisión del PR #7: migración de dos fases y rollback real
+
+Rama: `feat/hub-v0.5-refundacion`.
+Estado: **implementado / QA WordPress pendiente**.
+
+Origen: segunda auditoría sobre el PR #7, antes de iniciar la Fase 7. Cuatro
+hallazgos, todos sobre `HUB_Tibox_Upgrade` y su integración con el arranque del
+plugin.
+
+### 1 · El rollback no restauraba el estado anterior
+
+`insert_design()` pasaba cada objeto histórico a borrador en el momento de
+crear su reemplazo, sin guardar qué estado tenía antes. Poner
+`hub_tibox_designs_unified` en `0` no revertía nada: los componentes y landings
+migrados seguían en borrador.
+
+La migración se reescribió en dos fases:
+
+- **Stage**: cada objeto no migrado se copia a un `hub_design` nuevo, creado
+  siempre como borrador. El objeto histórico no se toca en esta fase.
+- **Cutover**: solo si el stage completo no tuvo fallos, se guarda el estado
+  original de cada objeto histórico en `_hub_migration_previous_status`, el
+  diseño nuevo se publica con ese mismo estado, y el histórico pasa a borrador.
+
+`HUB_Tibox_Upgrade::rollback_to_legacy()` es la rutina explícita e idempotente
+que faltaba: restaura cada objeto histórico a su estado guardado, retira su
+reemplazo a borrador y pone `hub_tibox_designs_unified` en `0`. Llamarla de
+nuevo con el sitio ya revertido es un no-op. Disponible desde
+**Constructor HUB → Diagnóstico** (checkbox de confirmación, gate en
+`manage_options`) y desde `wp hub rollback-to-legacy`.
+
+### 2 · Una migración parcial activaba Unified igual
+
+`install()` ponía `hub_tibox_designs_unified` en `1` sin mirar si
+`migrate_legacy_designs()` había devuelto elementos omitidos por error. Con el
+modelo anterior (sin fases) eso además dejaba objetos migrados con éxito en
+borrador mientras el sitio seguía en modo Legacy — invisibles, no solo
+inconsistentes.
+
+Ahora la fase de cutover, que es la única que cambia el estado público de
+cualquier objeto, **solo se ejecuta si el stage completo no tuvo fallos**.
+`HUB_Tibox_Upgrade::evaluate_migration_result()` es la función pura que decide
+esto — sin llamadas a WordPress, cubierta por 12 aserciones nuevas — y
+`hub_tibox_designs_unified` solo se activa cuando su resultado es `complete`.
+
+Un resultado `partial` deja el sitio funcionando exactamente como antes de
+intentar migrar, registra los fallos con su error, y ofrece un reintento
+explícito — desde **Constructor HUB → Diagnóstico** o `wp hub retry-migration`
+— que es seguro de repetir: los elementos ya migrados se detectan y se saltan.
+
+### 3 · El menú de Correo quedaba inalcanzable tras unificar
+
+`HUB_Tibox_Landing_Mailer` registraba su submenú bajo
+`edit.php?post_type=hub_component`, pero ese CPT pasa a `show_ui => false` en
+cuanto el sitio se unifica: el menú padre deja de existir y la página de Correo
+se vuelve inalcanzable desde el admin.
+
+Ahora se registra en los dos sitios — bajo el CPT histórico solo mientras el
+sitio no esté unificado, y bajo `constructor_hub_admin_menu` en cuanto lo está
+— de modo que siempre hay exactamente un menú visible, nunca cero ni dos.
+
+### 4 · Ventana de inconsistencia en la petición que completa la migración
+
+`HUB_Tibox_Plugin::instance()` se invoca al final del archivo bootstrap, lo que
+para el archivo principal de un plugin ocurre **antes** de que WordPress dispare
+`plugins_loaded`. Su constructor decidía `is_unified()` en ese mismo instante,
+antes de que la rutina de actualización (enganchada en `plugins_loaded` con
+prioridad 5) hubiera podido ejecutarse. La petición que completaba una
+migración seguía renderizando por el camino Legacy, mientras el contenido
+histórico que esa misma migración acababa de retirar ya estaba en borrador.
+
+La decisión se difiere a `plugins_loaded` con prioridad 10 — después de que la
+actualización haya corrido en la misma petición — mediante
+`HUB_Tibox_Plugin::needs_deferred_boot()`, una función pura que recibe si
+`plugins_loaded` ya se disparó y no depende de WordPress para poder probarse.
+Cubierta por 2 aserciones nuevas.
+
+Como consecuencia, **Constructor HUB → Diagnóstico** ahora se registra siempre
+disponible (vía `HUB_Tibox_Site_Config`, movida a la sección "siempre
+disponible" del bootstrap), con una entrada equivalente en el menú
+**Herramientas** cuando el sitio no está unificado — antes esa pantalla
+desaparecía por completo en modo Legacy, lo que habría dejado sin salida a
+cualquiera que necesitara reintentar o confirmar un rollback.
+
+### Archivos principales
+
+`includes/class-hub-upgrade.php` (reescrito), `class-hub-plugin.php`,
+`class-hub-landing-mailer.php`, `class-hub-site-config.php`, `class-hub-cli.php`,
+`uninstall.php`, `tests/test-upgrade-migration.php`,
+`tests/test-plugin-boot-order.php`.
+
+### Compatibilidad
+
+- Nuevas opciones: `hub_tibox_designs_unification_status` (pending / partial /
+  complete / rolled_back) y `hub_tibox_designs_rollback_result`. Añadidas a la
+  limpieza opcional de `uninstall.php`.
+- Nuevo meta `_hub_migration_previous_status` en los objetos históricos
+  migrados; se borra al hacer rollback.
+- El comportamiento de una migración que ya se completó con el código anterior
+  no cambia: `hub_tibox_designs_unified` en `1` sigue significando lo mismo.
+
+### QA
+
+PHPCS y PHPStan nivel 5 sin errores. 66 aserciones (14 nuevas: 12 sobre
+`evaluate_migration_result()`, 2 sobre `needs_deferred_boot()`). El rollback y
+el cutover en sí —lo que efectivamente escriben en la base de datos— solo se
+verifican en la Fase 7, sobre WordPress real: son exactamente el tipo de
+comportamiento que un arnés de tests puros no puede cubrir.
+
+---
+
 ## 2026-08-31 — Documentación y afinado post-fases
 
 Rama: `feat/hub-v0.5-refundacion`.

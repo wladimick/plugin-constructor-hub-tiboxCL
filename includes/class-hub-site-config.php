@@ -27,9 +27,28 @@ final class HUB_Tibox_Site_Config
 
     private function __construct()
     {
+        // `constructor_hub_admin_menu` only fires once the site is unified; a
+        // partial migration or a rollback both leave the site un-unified, and
+        // that is exactly when an administrator most needs to reach this page
+        // — to retry, or to confirm a rollback took effect. The Tools fallback
+        // keeps it reachable either way.
         add_action('constructor_hub_admin_menu', [$this, 'register_page']);
+        add_action('admin_menu', [$this, 'register_legacy_page']);
         add_action('admin_post_hub_tibox_export_config', [$this, 'export']);
         add_action('admin_post_hub_tibox_import_config', [$this, 'import']);
+        add_action('admin_post_hub_tibox_retry_unification', [$this, 'retry_unification']);
+        add_action('admin_post_hub_tibox_rollback_unification', [$this, 'rollback_unification']);
+    }
+
+    public function register_legacy_page(): void
+    {
+        if (HUB_Tibox_Upgrade::is_unified()) {
+            // The unified menu already added this page under Constructor HUB.
+            return;
+        }
+
+        $capability = HUB_Tibox_Capabilities::can_manage_settings() ? HUB_Tibox_Capabilities::MANAGE_SETTINGS : 'manage_options';
+        add_management_page('Diagnóstico Constructor HUB', 'Constructor HUB', $capability, 'constructor-hub-diagnostics', [$this, 'render']);
     }
 
     public function register_page(string $parent): void
@@ -232,15 +251,136 @@ final class HUB_Tibox_Site_Config
         ];
 
         $unified = HUB_Tibox_Upgrade::is_unified();
+        $status = HUB_Tibox_Upgrade::status();
+        $status_detail = [
+            HUB_Tibox_Upgrade::STATUS_COMPLETE => 'Unificado en hub_design, con versionado y rollback.',
+            HUB_Tibox_Upgrade::STATUS_PARTIAL => 'Migración parcial: algunos elementos no se migraron. Revisa la sección de migración más abajo antes de continuar.',
+            HUB_Tibox_Upgrade::STATUS_ROLLED_BACK => 'Revertido a los post types históricos por acción explícita de un administrador.',
+            HUB_Tibox_Upgrade::STATUS_PENDING => 'Todavía en los post types históricos: sin versionado ni rollback.',
+        ];
         $checks[] = [
             'label' => 'Modelo de diseños',
-            'status' => $unified ? 'ok' : 'warn',
-            'detail' => $unified
-                ? 'Unificado en hub_design, con versionado y rollback.'
-                : 'Todavía en los post types históricos: sin versionado ni rollback.',
+            'status' => $unified ? 'ok' : ($status === HUB_Tibox_Upgrade::STATUS_PARTIAL ? 'warn' : 'info'),
+            'detail' => $status_detail[$status] ?? $status_detail[HUB_Tibox_Upgrade::STATUS_PENDING],
         ];
 
         return $checks;
+    }
+
+    /**
+     * Migration status, with the two actions that change it: retrying a
+     * partial migration, or rolling a completed one back to the historical
+     * post types.
+     *
+     * Both are gated on `manage_options` explicitly, stricter than the usual
+     * `hub_manage_settings`: retrying writes new content, and rollback flips
+     * public status on every migrated object.
+     */
+    private function render_unification_panel(): void
+    {
+        $status = HUB_Tibox_Upgrade::status();
+        $notice = isset($_GET['hub_notice']) ? sanitize_key(wp_unslash($_GET['hub_notice'])) : '';
+        ?>
+        <?php if ($notice === 'unification_retried') : ?>
+            <div class="notice notice-info is-dismissible"><p>Migración reintentada. Revisa el resultado abajo.</p></div>
+        <?php elseif ($notice === 'unification_rolled_back') : ?>
+            <div class="notice notice-success is-dismissible"><p>Sitio revertido a los post types históricos.</p></div>
+        <?php endif; ?>
+
+        <?php if ($status === HUB_Tibox_Upgrade::STATUS_PARTIAL) : ?>
+            <?php $result = get_option(HUB_Tibox_Upgrade::OPTION_RESULT, []); ?>
+            <div class="notice notice-warning">
+                <p>
+                    <strong>Migración parcial.</strong>
+                    Creados: <?php echo esc_html((string) ($result['created'] ?? 0)); ?>,
+                    ya existentes: <?php echo esc_html((string) ($result['existing'] ?? 0)); ?>,
+                    <strong>fallidos: <?php echo esc_html((string) ($result['failed'] ?? 0)); ?></strong>.
+                    Constructor HUB no activa el modelo unificado mientras haya fallos: el sitio sigue funcionando
+                    exactamente como antes de intentar migrar.
+                </p>
+                <?php if (!empty($result['failures']) && is_array($result['failures'])) : ?>
+                    <table class="widefat striped" style="max-width:760px;margin-bottom:12px;">
+                        <thead><tr><th>Tipo</th><th>ID histórico</th><th>Error</th></tr></thead>
+                        <tbody>
+                        <?php foreach ($result['failures'] as $failure) : ?>
+                            <tr>
+                                <td><?php echo esc_html((string) ($failure['type'] ?? '')); ?></td>
+                                <td><code>#<?php echo esc_html((string) ($failure['legacy_id'] ?? '')); ?></code></td>
+                                <td><?php echo esc_html((string) ($failure['error'] ?? '')); ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                <?php endif; ?>
+                <?php if (current_user_can('manage_options')) : ?>
+                    <p>
+                        <a class="button button-primary" href="<?php echo esc_url(wp_nonce_url(
+                            add_query_arg('action', 'hub_tibox_retry_unification', admin_url('admin-post.php')),
+                            'hub_tibox_retry_unification'
+                        )); ?>">Reintentar migración</a>
+                    </p>
+                <?php endif; ?>
+            </div>
+        <?php elseif (HUB_Tibox_Upgrade::is_unified() && current_user_can('manage_options')) : ?>
+            <details style="margin-bottom:20px;">
+                <summary style="cursor:pointer;font-weight:600;">Revertir a los post types históricos</summary>
+                <div style="padding:14px 0 0;">
+                    <p>
+                        Restaura el estado publicado que tenían los componentes y landings históricos antes de la
+                        migración, y retira sus reemplazos <code>hub_design</code> a borrador. No borra ningún dato:
+                        los diseños y sus versiones quedan intactos y se puede volver a migrar más adelante.
+                    </p>
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                        <?php wp_nonce_field('hub_tibox_rollback_unification', 'hub_tibox_rollback_nonce'); ?>
+                        <input type="hidden" name="action" value="hub_tibox_rollback_unification">
+                        <label style="display:block;margin-bottom:10px;">
+                            <input type="checkbox" name="hub_confirm_rollback" value="1" required>
+                            Entiendo que esto revierte el modelo de diseños de este sitio a los post types históricos.
+                        </label>
+                        <?php submit_button('Revertir a legacy', 'delete'); ?>
+                    </form>
+                </div>
+            </details>
+        <?php endif; ?>
+        <?php
+    }
+
+    public function retry_unification(): void
+    {
+        if (!current_user_can('manage_options')) {
+            wp_die(esc_html__('No autorizado.', 'constructor-hub-tibox'), '', ['response' => 403]);
+        }
+
+        check_admin_referer('hub_tibox_retry_unification');
+
+        HUB_Tibox_Upgrade::instance()->retry_migration();
+
+        wp_safe_redirect(add_query_arg([
+            'page' => 'constructor-hub-diagnostics',
+            'hub_notice' => 'unification_retried',
+        ], admin_url('admin.php')));
+        exit;
+    }
+
+    public function rollback_unification(): void
+    {
+        if (!current_user_can('manage_options')) {
+            wp_die(esc_html__('No autorizado.', 'constructor-hub-tibox'), '', ['response' => 403]);
+        }
+
+        check_admin_referer('hub_tibox_rollback_unification', 'hub_tibox_rollback_nonce');
+
+        if (empty($_POST['hub_confirm_rollback'])) {
+            wp_die(esc_html__('Confirma la casilla antes de revertir.', 'constructor-hub-tibox'), '', ['back_link' => true]);
+        }
+
+        HUB_Tibox_Upgrade::instance()->rollback_to_legacy();
+
+        wp_safe_redirect(add_query_arg([
+            'page' => 'constructor-hub-diagnostics',
+            'hub_notice' => 'unification_rolled_back',
+        ], admin_url('admin.php')));
+        exit;
     }
 
     public function render(): void
@@ -254,6 +394,8 @@ final class HUB_Tibox_Site_Config
         ?>
         <div class="wrap">
             <h1>Diagnóstico y configuración</h1>
+
+            <?php $this->render_unification_panel(); ?>
 
             <h2>Compatibilidad de este sitio</h2>
             <table class="widefat striped" style="max-width:900px;">

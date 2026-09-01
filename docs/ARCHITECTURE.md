@@ -182,6 +182,14 @@ funcionalidad sin que nadie se entere.
 ## Compatibilidad
 
 - El default mantiene el comportamiento existente; activar HUB es explícito.
-- La unificación de diseños es reversible con una opción.
+- La migración a diseños unificados corre en dos fases: primero copia cada
+  objeto histórico a un `hub_design` en borrador (stage); solo si el lote
+  completo no tuvo fallos, publica los nuevos diseños y retira los históricos
+  (cutover). Una migración parcial nunca activa el modelo unificado ni deja
+  contenido invisible: el sitio sigue exactamente como estaba.
+- La unificación es reversible con `HUB_Tibox_Upgrade::rollback_to_legacy()`
+  (`Constructor HUB → Diagnóstico` o `wp hub rollback-to-legacy`), que restaura
+  el estado que tenía cada objeto histórico antes del cutover, no solo apaga
+  una opción.
 - Los post types históricos siguen registrados y sus datos intactos.
 - El HUB Theme es opcional y no se empaqueta con el plugin.

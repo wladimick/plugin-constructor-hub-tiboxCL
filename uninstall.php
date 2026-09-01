@@ -51,6 +51,8 @@ $hub_options = [
     'hub_tibox_plugin_version',
     'hub_tibox_designs_unified',
     'hub_tibox_designs_unification_result',
+    'hub_tibox_designs_unification_status',
+    'hub_tibox_designs_rollback_result',
     'hub_tibox_legacy_redirects',
     'hub_tibox_regions',
     'hub_tibox_design_rewrite_version',

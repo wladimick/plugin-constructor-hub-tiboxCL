@@ -133,8 +133,103 @@ final class HUB_Tibox_CLI
 
         WP_CLI::success(sprintf('%d leads eliminados por retención.', $deleted));
     }
+
+    /**
+     * Reports whether `hub_component`/`hub_landing` have been unified into
+     * `hub_design`, and the detail of the last attempt.
+     *
+     * @param string[]             $args
+     * @param array<string,string> $assoc_args
+     */
+    public function migration_status(array $args, array $assoc_args): void
+    {
+        $status = HUB_Tibox_Upgrade::status();
+        $result = get_option(HUB_Tibox_Upgrade::OPTION_RESULT, []);
+
+        WP_CLI::log(sprintf('Unificado: %s', HUB_Tibox_Upgrade::is_unified() ? 'sí' : 'no'));
+        WP_CLI::log(sprintf('Estado: %s', $status));
+
+        if (is_array($result) && $result !== []) {
+            WP_CLI::log(sprintf(
+                'Creados: %d — existentes: %d — omitidos: %d — fallidos: %d',
+                (int) ($result['created'] ?? 0),
+                (int) ($result['existing'] ?? 0),
+                (int) ($result['missing'] ?? 0),
+                (int) ($result['failed'] ?? 0)
+            ));
+        }
+
+        if ($status !== HUB_Tibox_Upgrade::STATUS_PARTIAL || empty($result['failures']) || !is_array($result['failures'])) {
+            return;
+        }
+
+        WP_CLI\Utils\format_items('table', $result['failures'], ['type', 'legacy_id', 'error']);
+    }
+
+    /**
+     * Retries a partial migration from `hub_component`/`hub_landing` into
+     * `hub_design`. A no-op once the site is already unified. Already staged
+     * items are skipped, so this is safe to run repeatedly.
+     *
+     * @param string[]             $args
+     * @param array<string,string> $assoc_args
+     */
+    public function retry_migration(array $args, array $assoc_args): void
+    {
+        $result = HUB_Tibox_Upgrade::instance()->retry_migration();
+
+        if ($result['status'] === HUB_Tibox_Upgrade::STATUS_COMPLETE) {
+            WP_CLI::success(sprintf(
+                'Migración completa. Creados: %d, existentes: %d.',
+                $result['created'],
+                $result['existing']
+            ));
+
+            return;
+        }
+
+        WP_CLI::warning(sprintf('Siguen fallando %d elementos:', $result['failed']));
+        WP_CLI\Utils\format_items('table', $result['failures'], ['type', 'legacy_id', 'error']);
+    }
+
+    /**
+     * Reverts a unified site to the historical `hub_component`/`hub_landing`
+     * post types, restoring the status each one had before the migration.
+     *
+     * ## OPTIONS
+     *
+     * [--yes]
+     * : Skip the confirmation prompt.
+     *
+     * @param string[]             $args
+     * @param array<string,string> $assoc_args
+     */
+    public function rollback_to_legacy(array $args, array $assoc_args): void
+    {
+        if (!HUB_Tibox_Upgrade::is_unified()) {
+            WP_CLI::log('El sitio ya está en el modelo histórico. Nada que revertir.');
+
+            return;
+        }
+
+        WP_CLI::confirm(
+            '¿Revertir este sitio a los post types históricos? Los diseños hub_design quedarán en borrador.',
+            $assoc_args
+        );
+
+        $result = HUB_Tibox_Upgrade::instance()->rollback_to_legacy();
+
+        foreach ($result['warnings'] as $warning) {
+            WP_CLI::warning($warning);
+        }
+
+        WP_CLI::success(sprintf('%d elementos restaurados a su estado anterior.', $result['restored']));
+    }
 }
 
 WP_CLI::add_command('hub migrate-wpcode', [new HUB_Tibox_CLI(), 'migrate_wpcode']);
 WP_CLI::add_command('hub designs', [new HUB_Tibox_CLI(), 'designs']);
 WP_CLI::add_command('hub purge-leads', [new HUB_Tibox_CLI(), 'purge_leads']);
+WP_CLI::add_command('hub migration-status', [new HUB_Tibox_CLI(), 'migration_status']);
+WP_CLI::add_command('hub retry-migration', [new HUB_Tibox_CLI(), 'retry_migration']);
+WP_CLI::add_command('hub rollback-to-legacy', [new HUB_Tibox_CLI(), 'rollback_to_legacy']);
