@@ -172,16 +172,21 @@ final class HUB_Tibox_Component_Manager
 
         update_post_meta($post_id, self::META_TYPE, $type);
 
-        // Visual code is restricted to trusted editors. PHP is never evaluated.
-        if (current_user_can('unfiltered_html')) {
-            $html = isset($_POST['hub_component_html']) ? wp_unslash($_POST['hub_component_html']) : '';
-            $css = isset($_POST['hub_component_css']) ? wp_unslash($_POST['hub_component_css']) : '';
-            $js = isset($_POST['hub_component_js']) ? wp_unslash($_POST['hub_component_js']) : '';
-
-            update_post_meta($post_id, self::META_HTML, $html);
-            update_post_meta($post_id, self::META_CSS, $css);
-            update_post_meta($post_id, self::META_JS, $js);
+        // Visual code is restricted to roles holding the HUB code capability.
+        if (!HUB_Tibox_Capabilities::can_edit_design_code()) {
+            HUB_Tibox_Capabilities::flag_code_not_saved();
+            return;
         }
+
+        // phpcs:disable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- design code is the payload; the nonce and the code capability are verified above.
+        $html = isset($_POST['hub_component_html']) ? wp_unslash($_POST['hub_component_html']) : '';
+        $css = isset($_POST['hub_component_css']) ? wp_unslash($_POST['hub_component_css']) : '';
+        $js = isset($_POST['hub_component_js']) ? wp_unslash($_POST['hub_component_js']) : '';
+        // phpcs:enable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+
+        update_post_meta($post_id, self::META_HTML, $html);
+        update_post_meta($post_id, self::META_CSS, $css);
+        update_post_meta($post_id, self::META_JS, $js);
     }
 
     public function add_settings_page(): void
@@ -279,6 +284,27 @@ final class HUB_Tibox_Component_Manager
                         </td>
                     </tr>
                     <tr>
+                        <th scope="row"><label for="hub-ip-header">Cabecera de IP del cliente</label></th>
+                        <td>
+                            <input id="hub-ip-header" name="hub_client_ip_header" class="regular-text" value="<?php echo esc_attr((string) get_option(HUB_Tibox_Landing_Forms::OPTION_IP_HEADER, '')); ?>" placeholder="CF-Connecting-IP">
+                            <p class="description">
+                                Solo si el sitio está detrás de Cloudflare, un balanceador o un WAF. Sin este valor el límite de envíos
+                                usa la IP del proxy y afecta a todos los visitantes por igual.
+                                <?php
+                                $hub_detected = [];
+                                foreach (['HTTP_CF_CONNECTING_IP' => 'CF-Connecting-IP', 'HTTP_TRUE_CLIENT_IP' => 'True-Client-IP', 'HTTP_X_FORWARDED_FOR' => 'X-Forwarded-For', 'HTTP_X_REAL_IP' => 'X-Real-IP'] as $hub_key => $hub_label) {
+                                    if (!empty($_SERVER[$hub_key])) {
+                                        $hub_detected[] = $hub_label;
+                                    }
+                                }
+                                if ($hub_detected !== []) {
+                                    echo '<br><strong>Detectadas en esta petición:</strong> <code>' . esc_html(implode('</code>, <code>', $hub_detected)) . '</code>';
+                                }
+                                ?>
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
                         <th scope="row"><label for="hub-hybrid-pages">Páginas de prueba/seleccionadas</label></th>
                         <td>
                             <select id="hub-hybrid-pages" name="hub_hybrid_pages[]" multiple size="12" style="min-width:360px;max-width:100%;">
@@ -329,6 +355,11 @@ final class HUB_Tibox_Component_Manager
         update_option(self::OPTION_HYBRID_ENABLED, isset($_POST['hub_hybrid_enabled']) ? '1' : '0', false);
         update_option(self::OPTION_HYBRID_SCOPE, $scope, false);
         update_option(self::OPTION_HYBRID_PAGES, array_values(array_unique(array_filter($pages))), false);
+
+        $ip_header = isset($_POST['hub_client_ip_header'])
+            ? preg_replace('/[^A-Za-z0-9_-]/', '', sanitize_text_field(wp_unslash($_POST['hub_client_ip_header'])))
+            : '';
+        update_option(HUB_Tibox_Landing_Forms::OPTION_IP_HEADER, (string) $ip_header, false);
 
         wp_safe_redirect(add_query_arg([
             'post_type' => self::POST_TYPE,
@@ -451,14 +482,14 @@ final class HUB_Tibox_Component_Manager
 
         $primary_menu = wp_nav_menu([
             'theme_location' => 'primary',
-            'container' => false,
+            'container' => '',
             'echo' => false,
             'fallback_cb' => false,
         ]);
 
         $footer_menu = wp_nav_menu([
             'theme_location' => 'footer',
-            'container' => false,
+            'container' => '',
             'echo' => false,
             'fallback_cb' => false,
         ]);

@@ -27,16 +27,24 @@ final class HUB_Tibox_Landing_Mailer
         return self::$instance;
     }
 
+    public const CRON_HOOK = 'constructor_hub_send_lead_mail';
+
     private function __construct()
     {
-        add_action('admin_menu', [$this, 'add_settings_page']);
+        // Registered in both places: `hub_component` keeps a visible admin UI
+        // only while a site has not been unified, and `constructor_hub_admin_menu`
+        // only fires once it has. Whichever mode is active, exactly one of the
+        // two adds a reachable submenu — never both, and never neither.
+        add_action('admin_menu', [$this, 'add_legacy_settings_page']);
+        add_action('constructor_hub_admin_menu', [$this, 'add_unified_settings_page']);
         add_action('admin_post_hub_tibox_save_mail_settings', [$this, 'save_settings']);
         add_action('admin_post_hub_tibox_send_test_mail', [$this, 'send_test_mail']);
+        add_action(self::CRON_HOOK, [$this, 'deliver_queued'], 10, 2);
     }
 
-    public function add_settings_page(): void
+    public function add_legacy_settings_page(): void
     {
-        if (!class_exists('HUB_Tibox_Component_Manager')) {
+        if (HUB_Tibox_Upgrade::is_unified() || !class_exists('HUB_Tibox_Component_Manager')) {
             return;
         }
 
@@ -50,10 +58,35 @@ final class HUB_Tibox_Landing_Mailer
         );
     }
 
+    public function add_unified_settings_page(string $parent): void
+    {
+        add_submenu_page(
+            $parent,
+            'Correo Constructor HUB',
+            'Correo',
+            HUB_Tibox_Capabilities::can_manage_settings() ? HUB_Tibox_Capabilities::MANAGE_SETTINGS : 'manage_options',
+            'constructor-hub-mail',
+            [$this, 'render_settings_page']
+        );
+    }
+
+    /** Base admin URL for this screen's own redirects, whichever mode is active. */
+    private function admin_page_url(array $args = []): string
+    {
+        if (HUB_Tibox_Upgrade::is_unified()) {
+            return add_query_arg(array_merge(['page' => 'constructor-hub-mail'], $args), admin_url('admin.php'));
+        }
+
+        return add_query_arg(array_merge([
+            'post_type' => 'hub_component',
+            'page' => 'constructor-hub-mail',
+        ], $args), admin_url('edit.php'));
+    }
+
     public function render_settings_page(): void
     {
-        if (!current_user_can('manage_options')) {
-            return;
+        if (!HUB_Tibox_Capabilities::can_manage_settings()) {
+            wp_die(esc_html__('No autorizado.', 'constructor-hub-tibox'));
         }
 
         $recipients = (string) get_option(self::OPTION_RECIPIENTS, get_option('admin_email'));
@@ -119,8 +152,8 @@ final class HUB_Tibox_Landing_Mailer
 
     public function save_settings(): void
     {
-        if (!current_user_can('manage_options')) {
-            wp_die('No autorizado.');
+        if (!HUB_Tibox_Capabilities::can_manage_settings()) {
+            wp_die(esc_html__('No autorizado.', 'constructor-hub-tibox'), '', ['response' => 403]);
         }
 
         check_admin_referer('hub_tibox_save_mail_settings', 'hub_tibox_mail_nonce');
@@ -133,18 +166,14 @@ final class HUB_Tibox_Landing_Mailer
         update_option(self::OPTION_RECIPIENTS, implode("\n", $emails), false);
         update_option(self::OPTION_CONFIRMATION, isset($_POST['hub_mail_confirmation']) ? '1' : '0', false);
 
-        wp_safe_redirect(add_query_arg([
-            'post_type' => HUB_Tibox_Component_Manager::POST_TYPE,
-            'page' => 'constructor-hub-mail',
-            'updated' => '1',
-        ], admin_url('edit.php')));
+        wp_safe_redirect($this->admin_page_url(['updated' => '1']));
         exit;
     }
 
     public function send_test_mail(): void
     {
-        if (!current_user_can('manage_options')) {
-            wp_die('No autorizado.');
+        if (!HUB_Tibox_Capabilities::can_manage_settings()) {
+            wp_die(esc_html__('No autorizado.', 'constructor-hub-tibox'), '', ['response' => 403]);
         }
 
         check_admin_referer('hub_tibox_send_test_mail', 'hub_tibox_test_mail_nonce');
@@ -160,11 +189,7 @@ final class HUB_Tibox_Landing_Mailer
             ['Content-Type: text/html; charset=UTF-8']
         );
 
-        wp_safe_redirect(add_query_arg([
-            'post_type' => HUB_Tibox_Component_Manager::POST_TYPE,
-            'page' => 'constructor-hub-mail',
-            'mail_test' => $ok ? 'success' : 'failed',
-        ], admin_url('edit.php')));
+        wp_safe_redirect($this->admin_page_url(['mail_test' => $ok ? 'success' : 'failed']));
         exit;
     }
 
@@ -174,6 +199,8 @@ final class HUB_Tibox_Landing_Mailer
      */
     public function send_lead_notifications(int $landing_id, int $lead_id, array $fields, array $tracking): void
     {
+        $jobs = [];
+
         $recipients = $this->recipients_for_landing($landing_id);
         if ($recipients !== []) {
             $subject = sprintf(
@@ -181,53 +208,91 @@ final class HUB_Tibox_Landing_Mailer
                 wp_specialchars_decode(get_the_title($landing_id) ?: 'Landing', ENT_QUOTES)
             );
 
-            $headers = ['Content-Type: text/html; charset=UTF-8'];
-            $email = sanitize_email((string) ($fields['email'] ?? ''));
-            if ($email !== '' && is_email($email)) {
-                $name = $this->sanitize_header_value((string) ($fields['name'] ?? 'Contacto'));
-                $headers[] = sprintf('Reply-To: %s <%s>', $name !== '' ? $name : 'Contacto', $email);
-            }
-
-            $sent = wp_mail(
-                $recipients,
-                $subject,
-                $this->build_internal_body($landing_id, $lead_id, $fields, $tracking),
-                $headers
-            );
-
-            if (!$sent) {
-                error_log(sprintf('[Constructor HUB] wp_mail interno falló. Lead ID: %d', $lead_id));
-            }
-        }
-
-        if (!$this->confirmation_enabled_for_landing($landing_id)) {
-            return;
+            $jobs[] = [
+                'kind' => 'internal',
+                'to' => $recipients,
+                'subject' => $subject,
+                'body' => $this->build_internal_body($landing_id, $lead_id, $fields, $tracking),
+                'reply_to' => sanitize_email((string) ($fields['email'] ?? '')),
+            ];
         }
 
         $email = sanitize_email((string) ($fields['email'] ?? ''));
-        if ($email === '' || !is_email($email)) {
+        if ($this->confirmation_enabled_for_landing($landing_id) && $email !== '' && is_email($email)) {
+            $jobs[] = [
+                'kind' => 'confirmation',
+                'to' => [$email],
+                'subject' => 'Solicitud recibida — ' . wp_specialchars_decode(get_bloginfo('name'), ENT_QUOTES),
+                'body' => $this->build_confirmation_body($landing_id, $fields),
+                'reply_to' => '',
+            ];
+        }
+
+        if ($jobs === []) {
             return;
         }
 
-        $sent = wp_mail(
-            $email,
-            'Solicitud recibida — ' . wp_specialchars_decode(get_bloginfo('name'), ENT_QUOTES),
-            $this->build_confirmation_body($landing_id, $fields),
-            ['Content-Type: text/html; charset=UTF-8']
-        );
+        $log = HUB_Tibox_Mail_Log::instance();
 
-        if (!$sent) {
-            error_log(sprintf('[Constructor HUB] wp_mail confirmación falló. Lead ID: %d', $lead_id));
+        foreach ($jobs as $job) {
+            $log_id = $log->record($lead_id, $landing_id, (string) $job['kind'], (array) $job['to'], (string) $job['subject']);
+
+            // The visitor should not wait for an SMTP round trip. Delivery is
+            // scheduled and the response returns immediately; if cron cannot
+            // run, the message is sent inline so nothing is silently lost.
+            $scheduled = wp_schedule_single_event(time() + 5, self::CRON_HOOK, [$log_id, $job]);
+
+            if ($scheduled === false || (defined('DISABLE_WP_CRON') && DISABLE_WP_CRON && !$this->has_external_cron())) {
+                $this->deliver_queued($log_id, $job);
+            }
         }
+    }
+
+    /**
+     * @param array<string,mixed> $job
+     */
+    public function deliver_queued(int $log_id, array $job): void
+    {
+        $to = array_filter(array_map('sanitize_email', (array) ($job['to'] ?? [])));
+        if ($to === []) {
+            return;
+        }
+
+        $headers = ['Content-Type: text/html; charset=UTF-8'];
+
+        $reply_to = sanitize_email((string) ($job['reply_to'] ?? ''));
+        if ($reply_to !== '' && is_email($reply_to)) {
+            // Address only: a display name is attacker controlled and could add
+            // a second recipient to every reply.
+            $headers[] = sprintf('Reply-To: <%s>', $reply_to);
+        }
+
+        $error = '';
+        $capture = static function (WP_Error $wp_error) use (&$error): void {
+            $error = $wp_error->get_error_message();
+        };
+        add_action('wp_mail_failed', $capture);
+
+        $sent = wp_mail($to, (string) ($job['subject'] ?? ''), (string) ($job['body'] ?? ''), $headers);
+
+        remove_action('wp_mail_failed', $capture);
+
+        HUB_Tibox_Mail_Log::instance()->mark(
+            $log_id,
+            $sent ? HUB_Tibox_Mail_Log::STATUS_SENT : HUB_Tibox_Mail_Log::STATUS_FAILED,
+            $sent ? '' : ($error !== '' ? $error : 'wp_mail() devolvió false sin detalle.')
+        );
+    }
+
+    private function has_external_cron(): bool
+    {
+        return (bool) apply_filters('constructor_hub_has_external_cron', false);
     }
 
     /** @return string[] */
     public function recipients_for_landing(int $landing_id): array
     {
-        $raw = '';
-        if (class_exists('HUB_Tibox_Landing_Manager')) {
-            $raw = HUB_Tibox_Landing_Manager::instance()->get_recipient_emails($landing_id);
-        }
+        $raw = HUB_Tibox_Form_Config::recipients($landing_id);
         if (trim($raw) === '') {
             $raw = (string) get_option(self::OPTION_RECIPIENTS, get_option('admin_email'));
         }
@@ -236,12 +301,11 @@ final class HUB_Tibox_Landing_Mailer
 
     public function confirmation_enabled_for_landing(int $landing_id): bool
     {
-        if (class_exists('HUB_Tibox_Landing_Manager')) {
-            $override = HUB_Tibox_Landing_Manager::instance()->get_confirmation_override($landing_id);
-            if ($override !== null) {
-                return $override;
-            }
+        $override = HUB_Tibox_Form_Config::confirmation_override($landing_id);
+        if ($override !== null) {
+            return $override;
         }
+
         return get_option(self::OPTION_CONFIRMATION, '1') === '1';
     }
 
@@ -328,8 +392,4 @@ final class HUB_Tibox_Landing_Mailer
             . '</div></div>';
     }
 
-    private function sanitize_header_value(string $value): string
-    {
-        return trim(str_replace(["\r", "\n"], '', $value));
-    }
 }

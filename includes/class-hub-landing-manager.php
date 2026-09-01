@@ -52,7 +52,6 @@ final class HUB_Tibox_Landing_Manager
     {
         add_action('init', [$this, 'register_post_type']);
         add_action('init', [$this, 'maybe_flush_rewrite_rules'], 99);
-        add_action('admin_init', [$this, 'enable_elementor_support']);
         add_action('add_meta_boxes_' . self::POST_TYPE, [$this, 'add_meta_boxes']);
         add_action('save_post_' . self::POST_TYPE, [$this, 'save_landing']);
         add_filter('map_meta_cap', [$this, 'protect_active_campaign'], 10, 4);
@@ -110,20 +109,6 @@ final class HUB_Tibox_Landing_Manager
         }
         flush_rewrite_rules(false);
         update_option(self::OPTION_REWRITE_VERSION, self::REWRITE_VERSION, false);
-    }
-
-    public function enable_elementor_support(): void
-    {
-        if (!did_action('elementor/loaded')) {
-            return;
-        }
-
-        $supported = get_option('elementor_cpt_support', ['page', 'post']);
-        $supported = is_array($supported) ? $supported : ['page', 'post'];
-        if (!in_array(self::POST_TYPE, $supported, true)) {
-            $supported[] = self::POST_TYPE;
-            update_option('elementor_cpt_support', array_values(array_unique($supported)));
-        }
     }
 
     public function add_meta_boxes(): void
@@ -346,13 +331,22 @@ final class HUB_Tibox_Landing_Manager
         $notes = isset($_POST['hub_landing_ads_notes']) ? sanitize_textarea_field(wp_unslash($_POST['hub_landing_ads_notes'])) : '';
         update_post_meta($post_id, self::META_ADS_NOTES, $notes);
 
-        if (current_user_can('unfiltered_html')) {
-            update_post_meta($post_id, self::META_HTML, isset($_POST['hub_landing_html']) ? wp_unslash($_POST['hub_landing_html']) : '');
-            update_post_meta($post_id, self::META_CSS, isset($_POST['hub_landing_css']) ? wp_unslash($_POST['hub_landing_css']) : '');
-            update_post_meta($post_id, self::META_JS, isset($_POST['hub_landing_js']) ? wp_unslash($_POST['hub_landing_js']) : '');
-            $full_html = isset($_POST['hub_landing_full_html']) ? wp_unslash($_POST['hub_landing_full_html']) : '';
-            update_post_meta($post_id, self::META_FULL_HTML, $this->strip_php_tags($full_html));
+        if (!HUB_Tibox_Capabilities::can_edit_design_code()) {
+            // Never drop the design silently: the previous behaviour saved the
+            // rest of the form and discarded HTML/CSS/JS with no feedback, which
+            // is total data loss on multisite where only super admins hold
+            // `unfiltered_html`.
+            HUB_Tibox_Capabilities::flag_code_not_saved();
+            return;
         }
+
+        // phpcs:disable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- design code is the payload; the nonce and the code capability are verified above.
+        update_post_meta($post_id, self::META_HTML, isset($_POST['hub_landing_html']) ? wp_unslash($_POST['hub_landing_html']) : '');
+        update_post_meta($post_id, self::META_CSS, isset($_POST['hub_landing_css']) ? wp_unslash($_POST['hub_landing_css']) : '');
+        update_post_meta($post_id, self::META_JS, isset($_POST['hub_landing_js']) ? wp_unslash($_POST['hub_landing_js']) : '');
+        $full_html = isset($_POST['hub_landing_full_html']) ? wp_unslash($_POST['hub_landing_full_html']) : '';
+        // phpcs:enable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+        update_post_meta($post_id, self::META_FULL_HTML, $full_html);
     }
 
     public function get_mode(int $post_id): string
@@ -404,7 +398,7 @@ final class HUB_Tibox_Landing_Manager
         update_post_meta($post_id, self::META_HTML, (string) ($data['html'] ?? ''));
         update_post_meta($post_id, self::META_CSS, (string) ($data['css'] ?? ''));
         update_post_meta($post_id, self::META_JS, (string) ($data['js'] ?? ''));
-        update_post_meta($post_id, self::META_FULL_HTML, $this->strip_php_tags((string) ($data['full_html'] ?? '')));
+        update_post_meta($post_id, self::META_FULL_HTML, (string) ($data['full_html'] ?? ''));
         update_post_meta($post_id, self::META_USE_HUB_CHROME, !empty($data['use_hub_chrome']) ? '1' : '0');
 
         $required = is_array($data['required_fields'] ?? null) ? $data['required_fields'] : [];
@@ -570,22 +564,20 @@ final class HUB_Tibox_Landing_Manager
 
     private function save_text_meta(int $post_id, string $meta_key, string $input_name): void
     {
+        // phpcs:disable WordPress.Security.NonceVerification.Missing -- verified by the caller before these helpers run.
         $value = isset($_POST[$input_name]) ? sanitize_text_field(wp_unslash($_POST[$input_name])) : '';
+        // phpcs:enable WordPress.Security.NonceVerification.Missing
         update_post_meta($post_id, $meta_key, $value);
     }
 
     private function save_date_meta(int $post_id, string $meta_key, string $input_name): void
     {
+        // phpcs:disable WordPress.Security.NonceVerification.Missing -- verified by the caller before these helpers run.
         $value = isset($_POST[$input_name]) ? sanitize_text_field(wp_unslash($_POST[$input_name])) : '';
+        // phpcs:enable WordPress.Security.NonceVerification.Missing
         if ($value !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
             $value = '';
         }
         update_post_meta($post_id, $meta_key, $value);
-    }
-
-    private function strip_php_tags(string $content): string
-    {
-        $content = preg_replace('/<\?php[\s\S]*?\?>/i', '', $content) ?? $content;
-        return preg_replace('/<\?=[\s\S]*?\?>/i', '', $content) ?? $content;
     }
 }

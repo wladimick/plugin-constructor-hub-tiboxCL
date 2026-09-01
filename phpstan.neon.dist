@@ -1,0 +1,25 @@
+includes:
+    - vendor/szepeviktor/phpstan-wordpress/extension.neon
+
+parameters:
+    level: 5
+    paths:
+        - tibox-ai-frontend.php
+        - uninstall.php
+        - includes
+        - templates
+    excludePaths:
+        - vendor (?)
+        - node_modules (?)
+        - examples (?)
+        # Extends \Elementor\Widget_Base, which only exists when Elementor is
+        # installed. The file guards its own class_exists() before declaring.
+        - includes/adapters/class-hub-elementor-widget.php
+    bootstrapFiles:
+        - tests/phpstan-bootstrap.php
+    scanFiles:
+        # WP-CLI is only present when the command line runs; the CLI file guards
+        # itself with defined('WP_CLI').
+        - vendor/php-stubs/wp-cli-stubs/wp-cli-stubs.php
+        - vendor/php-stubs/wp-cli-stubs/wp-cli-commands-stubs.php
+    treatPhpDocTypesAsCertain: false

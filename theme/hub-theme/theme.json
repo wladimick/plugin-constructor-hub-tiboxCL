@@ -1,0 +1,30 @@
+{
+    "$schema": "https://schemas.wp.org/trunk/theme.json",
+    "version": 2,
+    "settings": {
+        "appearanceTools": true,
+        "layout": {
+            "contentSize": "760px",
+            "wideSize": "1200px"
+        },
+        "color": {
+            "defaultPalette": false,
+            "defaultGradients": false,
+            "custom": true,
+            "palette": [
+                { "slug": "hub-primary", "name": "HUB primario", "color": "var(--hub-primary, #1f2937)" },
+                { "slug": "hub-accent", "name": "HUB acento", "color": "var(--hub-accent, #2563eb)" },
+                { "slug": "hub-text", "name": "HUB texto", "color": "var(--hub-text, #111827)" },
+                { "slug": "hub-surface", "name": "HUB superficie", "color": "var(--hub-surface, #f9fafb)" },
+                { "slug": "hub-background", "name": "HUB fondo", "color": "var(--hub-background, #ffffff)" }
+            ]
+        },
+        "typography": {
+            "customFontSize": true,
+            "fluid": true
+        },
+        "spacing": {
+            "units": ["px", "rem", "%", "vw"]
+        }
+    }
+}

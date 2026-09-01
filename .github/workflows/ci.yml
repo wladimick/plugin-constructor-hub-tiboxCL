@@ -13,8 +13,8 @@ permissions:
   contents: read
 
 jobs:
-  php-lint:
-    name: PHP syntax (${{ matrix.php }})
+  php:
+    name: PHP ${{ matrix.php }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -30,16 +30,29 @@ jobs:
         with:
           php-version: ${{ matrix.php }}
           coverage: none
+          tools: composer:v2
 
       - name: PHP lint
         shell: bash
         run: |
           set -euo pipefail
           while IFS= read -r -d '' file; do
-            php -l "$file"
+            php -l "$file" > /dev/null
           done < <(find . -type f -name '*.php' -not -path './vendor/*' -print0)
 
-  javascript-syntax:
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress
+
+      - name: Coding standards
+        run: composer run-script lint
+
+      - name: Static analysis
+        run: php -d memory_limit=-1 vendor/bin/phpstan analyse --no-progress
+
+      - name: Unit tests
+        run: composer run-script test
+
+  javascript:
     name: JavaScript syntax
     runs-on: ubuntu-latest
 
@@ -58,14 +71,14 @@ jobs:
           set -euo pipefail
           while IFS= read -r -d '' file; do
             node --check "$file"
-          done < <(find . -type f -name '*.js' -not -path './node_modules/*' -print0)
+          done < <(find . -type f -name '*.js' -not -path './node_modules/*' -not -path './vendor/*' -print0)
 
-  package-beta:
+  package:
     name: Build installable plugin ZIP
     runs-on: ubuntu-latest
     needs:
-      - php-lint
-      - javascript-syntax
+      - php
+      - javascript
 
     steps:
       - name: Checkout
@@ -77,15 +90,13 @@ jobs:
           set -euo pipefail
           VERSION=$(grep -m1 '^ \* Version:' tibox-ai-frontend.php | sed 's/^ \* Version: *//')
           # Compatibility: keep the historical folder name while installations
-          # of the MVP exist. This lets WordPress replace/update the same plugin
-          # instead of installing a second copy with duplicate classes.
+          # of the MVP exist. WordPress identifies a plugin by its path, so a
+          # rename would install a second copy with duplicate classes.
           PACKAGE_DIR="dist/tibox-ai-frontend"
           mkdir -p "$PACKAGE_DIR"
-          rsync -a \
-            --exclude='.git/' \
-            --exclude='.github/' \
-            --exclude='dist/' \
-            ./ "$PACKAGE_DIR/"
+          # Everything listed in .distignore stays out of the shipped plugin:
+          # documentation and examples do not belong on a production server.
+          rsync -a --exclude-from=.distignore ./ "$PACKAGE_DIR/"
           cd dist
           zip -qr "constructor-hub-tibox-${VERSION}.zip" tibox-ai-frontend
           echo "PACKAGE=dist/constructor-hub-tibox-${VERSION}.zip" >> "$GITHUB_ENV"

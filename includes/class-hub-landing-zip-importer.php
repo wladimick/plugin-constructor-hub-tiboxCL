@@ -29,29 +29,51 @@ final class HUB_Tibox_Landing_Zip_Importer
     private function __construct()
     {
         add_action('post_edit_form_tag', [$this, 'add_multipart_enctype']);
-        add_action('add_meta_boxes_' . HUB_Tibox_Landing_Manager::POST_TYPE, [$this, 'add_meta_box']);
-        add_action('save_post_' . HUB_Tibox_Landing_Manager::POST_TYPE, [$this, 'handle_upload'], 30);
+        foreach (self::host_post_types() as $post_type) {
+            add_action('add_meta_boxes_' . $post_type, [$this, 'add_meta_box']);
+            add_action('save_post_' . $post_type, [$this, 'handle_upload'], 30);
+        }
         add_action('template_redirect', [$this, 'maybe_render_package'], -20);
         add_action('admin_notices', [$this, 'display_stored_errors']);
+        add_action('constructor_hub_design_deleted', [$this, 'delete_existing_folder']);
+    }
+
+    /**
+     * Post types that can host a package. Both the unified design type and the
+     * historical landing type, so a site mid-migration keeps working.
+     *
+     * @return string[]
+     */
+    public static function host_post_types(): array
+    {
+        // Once designs are unified, packages belong to HUB_Tibox_Package and the
+        // historical importer only serves the pre-migration landing type.
+        if (class_exists('HUB_Tibox_Upgrade') && HUB_Tibox_Upgrade::is_unified()) {
+            return ['hub_landing'];
+        }
+
+        return ['hub_landing'];
     }
 
     public function add_multipart_enctype(WP_Post $post): void
     {
-        if ($post->post_type === HUB_Tibox_Landing_Manager::POST_TYPE) {
+        if (in_array($post->post_type, self::host_post_types(), true)) {
             echo ' enctype="multipart/form-data"';
         }
     }
 
     public function add_meta_box(): void
     {
-        add_meta_box(
-            'hub-landing-zip',
-            'Importar proyecto ZIP (Claude / IA)',
-            [$this, 'render_meta_box'],
-            HUB_Tibox_Landing_Manager::POST_TYPE,
-            'normal',
-            'high'
-        );
+        foreach (self::host_post_types() as $post_type) {
+            add_meta_box(
+                'hub-landing-zip',
+                'Importar proyecto ZIP (Claude / IA)',
+                [$this, 'render_meta_box'],
+                $post_type,
+                'normal',
+                'high'
+            );
+        }
     }
 
     public function render_meta_box(WP_Post $post): void
@@ -104,11 +126,13 @@ final class HUB_Tibox_Landing_Zip_Importer
         if (
             !isset($_FILES['hub_landing_zip_file']) ||
             !is_array($_FILES['hub_landing_zip_file']) ||
+            !isset($_FILES['hub_landing_zip_file']['error']) ||
             (int) $_FILES['hub_landing_zip_file']['error'] === UPLOAD_ERR_NO_FILE
         ) {
             return;
         }
 
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- the upload is handed to wp_handle_upload() and every field is validated below.
         $file = $_FILES['hub_landing_zip_file'];
         if ((int) $file['error'] !== UPLOAD_ERR_OK) {
             $this->add_admin_error('Error de subida ZIP: código ' . (int) $file['error'] . '.');
@@ -130,7 +154,14 @@ final class HUB_Tibox_Landing_Zip_Importer
         require_once ABSPATH . 'wp-admin/includes/file.php';
         $uploaded = wp_handle_upload($file, [
             'test_form' => false,
-            'mimes' => ['zip' => 'application/zip'],
+            // Windows and several browsers announce ZIP files with other MIME
+            // strings. The real validation is the content inspection below.
+            'mimes' => [
+                'zip' => 'application/zip',
+                'zip|x-zip' => 'application/x-zip-compressed',
+                'zip|multipart' => 'multipart/x-zip',
+                'zip|octet' => 'application/octet-stream',
+            ],
         ]);
 
         if (!is_array($uploaded) || !empty($uploaded['error']) || empty($uploaded['file'])) {
@@ -139,7 +170,7 @@ final class HUB_Tibox_Landing_Zip_Importer
         }
 
         $zip_path = (string) $uploaded['file'];
-        $result = $this->extract_validated_package($zip_path, $post_id);
+        $result = $this->extract_to($zip_path, $this->get_extract_dir($post_id), $post_id);
         @unlink($zip_path);
 
         if (is_wp_error($result)) {
@@ -152,8 +183,17 @@ final class HUB_Tibox_Landing_Zip_Importer
         update_post_meta($post_id, self::META_ORIGINAL_NAME, $original);
     }
 
-    /** @return string|WP_Error */
-    private function extract_validated_package(string $zip_path, int $post_id)
+    /**
+     * Validate and extract a ZIP into $target, atomically.
+     *
+     * Everything is inspected before a single byte is written: path traversal,
+     * symlinks, blocked config files, extension allow list and declared sizes.
+     * The archive is then written to a staging directory and swapped in, so a
+     * failure halfway through never leaves a half extracted package live.
+     *
+     * @return string|WP_Error The entry HTML relative to $target.
+     */
+    public function extract_to(string $zip_path, string $target, int $post_id = 0)
     {
         if (!class_exists('ZipArchive')) {
             return new WP_Error('hub_zip_missing', 'El servidor no tiene habilitada la extensión PHP ZipArchive.');
@@ -230,13 +270,14 @@ final class HUB_Tibox_Landing_Zip_Importer
             $manifest[] = ['index' => $i, 'path' => $safe, 'dir' => $is_dir];
         }
 
-        $target = $this->get_extract_dir($post_id);
         $staging = $target . '-staging-' . wp_generate_password(8, false, false);
         $this->rrmdir($staging);
         if (!wp_mkdir_p($staging)) {
             $zip->close();
             return new WP_Error('hub_zip_mkdir', 'No fue posible crear la carpeta temporal de extracción.');
         }
+
+        $written_total = 0;
 
         foreach ($manifest as $item) {
             $destination = trailingslashit($staging) . $item['path'];
@@ -266,11 +307,31 @@ final class HUB_Tibox_Landing_Zip_Importer
                 return new WP_Error('hub_zip_write', 'No fue posible escribir un archivo del package.');
             }
 
-            stream_copy_to_stream($stream, $out);
+            // The size validated above comes from the archive header, which the
+            // archive declares about itself. Bound the actual copy so a
+            // decompression bomb cannot fill the disk.
+            $budget = min($max_single, max(0, $max_total - $written_total));
+            $written = (int) stream_copy_to_stream($stream, $out, $budget + 1);
             fclose($stream);
             fclose($out);
+
+            $written_total += $written;
+            if ($written > $max_single || $written_total > $max_total) {
+                $zip->close();
+                $this->rrmdir($staging);
+                return new WP_Error(
+                    'hub_zip_bomb',
+                    'El contenido real del ZIP supera el límite permitido al descomprimirse: ' . esc_html($item['path'])
+                );
+            }
         }
         $zip->close();
+
+        $svg_error = $this->sanitize_extracted_svgs($staging);
+        if (is_wp_error($svg_error)) {
+            $this->rrmdir($staging);
+            return $svg_error;
+        }
 
         $entry = $this->find_entry_html($staging);
         if ($entry === '') {
@@ -278,13 +339,129 @@ final class HUB_Tibox_Landing_Zip_Importer
             return new WP_Error('hub_zip_entry', 'No se encontró un archivo HTML principal (index.html o un HTML en la raíz).');
         }
 
-        $this->delete_existing_folder($post_id);
+        HUB_Tibox_Filesystem::delete_directory($target);
         if (!@rename($staging, $target)) {
             $this->rrmdir($staging);
             return new WP_Error('hub_zip_swap', 'No fue posible activar el package extraído.');
         }
 
         return $entry;
+    }
+
+    /**
+     * SVG is XML: it can carry <script>, event handlers and javascript: URLs,
+     * and once extracted it is served from the site origin. Every SVG in a
+     * package is rewritten to a passive subset before it becomes reachable.
+     *
+     * @return true|WP_Error
+     */
+    private function sanitize_extracted_svgs(string $dir)
+    {
+        if (!apply_filters('constructor_hub_zip_allow_svg', true)) {
+            return true;
+        }
+
+        $iterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS)
+        );
+
+        foreach ($iterator as $file) {
+            if (!$file instanceof SplFileInfo || !$file->isFile()) {
+                continue;
+            }
+            if (strtolower($file->getExtension()) !== 'svg') {
+                continue;
+            }
+
+            $path = $file->getPathname();
+            $contents = file_get_contents($path);
+            if ($contents === false) {
+                return new WP_Error('hub_zip_svg_read', 'No fue posible inspeccionar un SVG del package.');
+            }
+
+            $clean = self::sanitize_svg($contents);
+            if ($clean === null) {
+                return new WP_Error(
+                    'hub_zip_svg',
+                    'Un SVG del package no pudo sanearse: ' . esc_html(basename($path))
+                );
+            }
+
+            if (file_put_contents($path, $clean) === false) {
+                return new WP_Error('hub_zip_svg_write', 'No fue posible sanear un SVG del package.');
+            }
+        }
+
+        return true;
+    }
+
+    /** Returns the passive SVG, or null when it cannot be parsed. */
+    public static function sanitize_svg(string $svg): ?string
+    {
+        if (trim($svg) === '') {
+            return $svg;
+        }
+
+        $previous = libxml_use_internal_errors(true);
+        $document = new DOMDocument();
+        $loaded = $document->loadXML($svg, LIBXML_NONET | LIBXML_NOENT);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+
+        if (!$loaded) {
+            return null;
+        }
+
+        $forbidden_tags = ['script', 'foreignobject', 'iframe', 'embed', 'object', 'handler', 'set', 'animate'];
+        $xpath = new DOMXPath($document);
+
+        foreach ($forbidden_tags as $tag) {
+            $nodes = $xpath->query('//*[translate(local-name(), "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")="' . $tag . '"]');
+            if ($nodes === false) {
+                continue;
+            }
+            foreach (iterator_to_array($nodes) as $node) {
+                if ($node instanceof DOMNode && $node->parentNode instanceof DOMNode) {
+                    $node->parentNode->removeChild($node);
+                }
+            }
+        }
+
+        $elements = $xpath->query('//*');
+        if ($elements !== false) {
+            foreach ($elements as $element) {
+                if (!$element instanceof DOMElement) {
+                    continue;
+                }
+                // A snapshot: removing an attribute while iterating the live
+                // DOMNamedNodeMap skips the next one.
+                foreach (iterator_to_array($element->attributes) as $attribute) {
+                    if (!$attribute instanceof DOMAttr) {
+                        continue;
+                    }
+                    $name = strtolower($attribute->nodeName);
+                    $value = (string) $attribute->nodeValue;
+                    $normalized = strtolower(preg_replace('/\s+/', '', $value) ?? $value);
+
+                    if (str_starts_with($name, 'on')) {
+                        $element->removeAttributeNode($attribute);
+                        continue;
+                    }
+                    if (in_array($name, ['href', 'xlink:href', 'src', 'from', 'to', 'values'], true)) {
+                        if (str_starts_with($normalized, 'javascript:') || str_starts_with($normalized, 'data:text/html')) {
+                            $element->removeAttributeNode($attribute);
+                        }
+                        continue;
+                    }
+                    if ($name === 'style' && (str_contains($normalized, 'javascript:') || str_contains($normalized, 'expression('))) {
+                        $element->removeAttributeNode($attribute);
+                    }
+                }
+            }
+        }
+
+        $output = $document->saveXML();
+        return $output === false ? null : $output;
     }
 
     private function validate_relative_path(string $path): string
@@ -311,9 +488,6 @@ final class HUB_Tibox_Landing_Zip_Importer
 
     private function is_symlink(ZipArchive $zip, int $index): bool
     {
-        if (!method_exists($zip, 'getExternalAttributesIndex')) {
-            return false;
-        }
         $opsys = 0;
         $attr = 0;
         if (!$zip->getExternalAttributesIndex($index, $opsys, $attr)) {
@@ -325,12 +499,16 @@ final class HUB_Tibox_Landing_Zip_Importer
 
     public function maybe_render_package(): void
     {
-        if (is_admin() || !is_singular(HUB_Tibox_Landing_Manager::POST_TYPE) || is_feed() || is_embed()) {
+        if (is_admin() || !is_singular(self::host_post_types()) || is_feed() || is_embed()) {
+            return;
+        }
+
+        if (post_password_required(get_queried_object_id())) {
             return;
         }
 
         $post_id = get_queried_object_id();
-        if (HUB_Tibox_Landing_Manager::instance()->get_mode($post_id) !== HUB_Tibox_Landing_Manager::MODE_PACKAGE) {
+        if (self::render_mode($post_id) !== 'package') {
             return;
         }
 
@@ -356,6 +534,17 @@ final class HUB_Tibox_Landing_Zip_Importer
         }
 
         HUB_Tibox_Landing_Document::render($html, $post_id, $base);
+    }
+
+    /** Render mode of the host object, whichever post type it is. */
+    private static function render_mode(int $post_id): string
+    {
+        if (class_exists('HUB_Tibox_Design') && get_post_type($post_id) === HUB_Tibox_Design::POST_TYPE) {
+            return HUB_Tibox_Design::get_render_mode($post_id);
+        }
+
+        $mode = (string) get_post_meta($post_id, '_hub_landing_mode', true);
+        return $mode !== '' ? $mode : 'hub';
     }
 
     public function get_extract_dir(int $post_id): string
@@ -407,7 +596,7 @@ final class HUB_Tibox_Landing_Zip_Importer
         return true;
     }
 
-    private function find_entry_html(string $dir): string
+    public function find_entry_html(string $dir): string
     {
         if (is_file($dir . '/index.html')) {
             return 'index.html';
@@ -442,45 +631,19 @@ final class HUB_Tibox_Landing_Zip_Importer
         return '';
     }
 
-    private function delete_existing_folder(int $post_id): void
+    public function delete_existing_folder(int $post_id): void
     {
         $this->rrmdir($this->get_extract_dir($post_id));
     }
 
     private function rrmdir(string $dir): void
     {
-        if (!is_dir($dir)) return;
-        $items = scandir($dir);
-        if (!is_array($items)) return;
-        foreach ($items as $item) {
-            if ($item === '.' || $item === '..') continue;
-            $path = $dir . '/' . $item;
-            if (is_dir($path) && !is_link($path)) {
-                $this->rrmdir($path);
-            } else {
-                @unlink($path);
-            }
-        }
-        @rmdir($dir);
+        HUB_Tibox_Filesystem::delete_directory($dir);
     }
 
     private function copy_directory(string $source, string $target): bool
     {
-        if (!wp_mkdir_p($target)) return false;
-        $items = scandir($source);
-        if (!is_array($items)) return false;
-        foreach ($items as $item) {
-            if ($item === '.' || $item === '..') continue;
-            $src = $source . '/' . $item;
-            $dst = $target . '/' . $item;
-            if (is_link($src)) return false;
-            if (is_dir($src)) {
-                if (!$this->copy_directory($src, $dst)) return false;
-            } elseif (!copy($src, $dst)) {
-                return false;
-            }
-        }
-        return true;
+        return HUB_Tibox_Filesystem::copy_directory($source, $target);
     }
 
     private function add_admin_error(string $message): void

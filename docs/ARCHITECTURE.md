@@ -1,301 +1,208 @@
 # Arquitectura — Constructor HUB Tibox
 
-Fecha base: 2026-08-28.
+Fecha base: 2026-08-28. Reescrita: 2026-08-31 tras la auditoría integral.
+
+Decisiones vigentes:
+[ADR-0001](decisions/ADR-0001-core-independent-theme-elementor.md),
+[ADR-0003](decisions/ADR-0003-design-unificado-y-versionado.md),
+[ADR-0004](decisions/ADR-0004-insertion-api-y-regiones.md).
+[ADR-0002](decisions/ADR-0002-landings-cpt-native-forms.md) queda sustituida
+parcialmente por ADR-0003.
 
 ## Objetivo arquitectónico
 
-Permitir que WordPress conserve sus capacidades de backend mientras la presentación migra progresivamente a componentes y páginas HTML/CSS/JS administrados por Constructor HUB Tibox.
+Permitir que WordPress conserve sus capacidades de backend mientras la
+presentación migra progresivamente a componentes HTML/CSS/JS administrados por
+Constructor HUB.
 
 ## Capas
 
 ```text
-┌──────────────────────────────────────────────┐
-│ WordPress backend                            │
-│ páginas · entradas · medios · usuarios       │
-│ SEO · REST · formularios · integraciones     │
-└──────────────────────────────────────────────┘
-                     │
-┌──────────────────────────────────────────────┐
-│ Constructor HUB Tibox                        │
-│                                              │
-│ Core                                         │
-│ ├─ configuración                             │
-│ ├─ renderer                                  │
-│ ├─ variables dinámicas                       │
-│ ├─ registry de componentes                   │
-│ ├─ assets                                    │
-│ ├─ preview/versionado                        │
-│ └─ compatibilidad                            │
-│                                              │
-│ Presentación                                 │
-│ ├─ Header                                    │
-│ ├─ Footer                                    │
-│ ├─ bloques                                   │
-│ ├─ páginas                                   │
-│ └─ Design Packages                           │
-│                                              │
-│ Adaptadores                                  │
-│ ├─ Elementor                                 │
-│ ├─ Tibox                                     │
-│ ├─ Prodata                                   │
-│ └─ futuros sitios/themes                     │
-└──────────────────────────────────────────────┘
-                     │
-┌──────────────────────────────────────────────┐
-│ Theme                                        │
-│ actual del sitio hoy / HUB Theme futuro      │
-└──────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│  WordPress                                                           │
+│  contenido · medios · usuarios · SEO (Rank Math) · GTM · wp_mail     │
+└───────────────────────────────┬──────────────────────────────────────┘
+                                │
+┌───────────────────────────────▼──────────────────────────────────────┐
+│  CONSTRUCTOR HUB — CORE (genérico, sin branding, sin Elementor)      │
+│                                                                      │
+│  ┌── Design Object ────────────────────────────────────────────┐    │
+│  │  CPT  hub_design        identidad · título · slug · SEO      │    │
+│  │  meta _hub_type         header|footer|menu|hero|section|      │    │
+│  │                         form|landing|page                     │    │
+│  │  meta _hub_current_version → fila de la tabla de versiones    │    │
+│  └───────────────────────────┬─────────────────────────────────┘    │
+│                              │                                       │
+│  ┌── Version Store ──────────▼─────────────────────────────────┐    │
+│  │  wp_hub_design_versions                                      │    │
+│  │  id · design_id · version · status(draft|live|archived)      │    │
+│  │  html · css · js · manifest · asset_dir · entry · checksum   │    │
+│  │  publicar = mover el puntero. rollback = moverlo atrás.      │    │
+│  └──────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  Package Pipeline     ZIP → validar → manifest → versión borrador    │
+│  Variable Registry    UN contrato {{...}}, versionado y validado     │
+│  Design System        tokens --hub-* por sitio, impresos una vez     │
+│  Asset Compiler       CSS/JS a archivos con hash + scope opcional    │
+│  Render Engine        región · fragmento · documento · package       │
+│  Insertion API        shortcode · bloque · widget · función          │
+│  Forms Backend        REST · antispam · idempotencia · correo        │
+│  Lead Store           tabla propia · export · retención · privacidad │
+│  Capabilities         hub_manage_designs · hub_manage_leads · …      │
+│  Migration Map        qué renderiza cada URL y de qué depende        │
+└───────────────────────────────┬──────────────────────────────────────┘
+                                │
+┌───────────────────────────────▼──────────────────────────────────────┐
+│  ADAPTERS (opcionales)                                               │
+│  elementor · antispam · CRM/WebOps · wpcode-legacy                   │
+└───────────────────────────────┬──────────────────────────────────────┘
+                                │
+┌───────────────────────────────▼──────────────────────────────────────┐
+│  SITE CONFIG   tokens · logos · destinatarios · adapters activos     │
+│  tibox.cl · prodata.cl · cliente-n                                   │
+└───────────────────────────────┬──────────────────────────────────────┘
+                                │
+┌───────────────────────────────▼──────────────────────────────────────┐
+│  THEME   el actual del sitio  →  HUB Theme opcional                  │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
-## Principio central: core independiente
+## Dónde vive cada dato
 
-El core de Constructor HUB no puede asumir:
-
-- que Elementor está instalado;
-- que Hello Elementor es el theme;
-- que el sitio usa colores/logo Tibox;
-- que Rank Math es siempre el plugin SEO;
-- que el formulario pertenece a Tibox;
-- que existe WPCode.
-
-Esas integraciones deben resolverse mediante detección, configuración o adaptadores.
+| Dato | Dónde | Por qué |
+| --- | --- | --- |
+| Landing o componente como objeto: título, slug, estado, autor, permalink, SEO | **CPT** | Es lo que WordPress hace bien. Reinventarlo es puro costo. |
+| Versiones del código visual | **Tabla propia** | Filas inmutables, comparables. Las revisiones de WP no cubren post meta. |
+| Assets de un package | **Filesystem** + fila de versión | Los sirve el servidor web, no PHP. |
+| Configuración por objeto: modo, chrome, destinatarios, campaña | **Post meta** | Pocos valores escalares que se leen con el post. |
+| Leads | **Tabla propia** | Alto volumen, campos fijos, filtrado, exportación, retención y borrado selectivo. |
+| Entregas de correo | **Tabla propia** | Necesarias para depurar "el lead entró pero no llegó el correo". |
+| Design System | **Option** + CSS generado | Un registro por sitio, leído en cada request. |
 
 ## Modos de renderizado
 
-### 1. Legacy
+### Región
 
-El theme actual y Elementor continúan renderizando normalmente.
+Header y Footer se configuran por separado:
 
-HUB puede:
+- **`theme`**: sin cambios.
+- **`inject`**: se conserva la plantilla del theme y el diseño HUB se coloca por
+  `wp_body_open` / `wp_footer`, con un selector CSS **configurado** para ocultar
+  la región del theme. Es el modo seguro sobre un theme desconocido y el que
+  permite migrar una sola región.
+- **`replace`**: Constructor HUB entrega el documento completo. Una región en
+  modo `theme` no se imprime en este modo.
 
-- insertar bloques vía shortcode/hook;
-- preparar preview;
-- administrar Design System/componentes sin sustituir la página.
+### Fragmento
 
-### 2. Híbrido
+Un diseño insertado dentro de contenido que el HUB no controla, mediante
+shortcode, bloque, widget de Elementor o `constructor_hub_render()`. Es el
+mecanismo de la migración por piezas.
 
-HUB controla partes globales o locales sin eliminar todavía el render existente.
+### Documento
 
-Ejemplo:
+Los tipos `landing` y `page` tienen URL propia y pueden renderizarse como:
 
-```text
-HEADER     HUB
-MAIN       Elementor / the_content()
-FOOTER     HUB
-```
+- **HUB**: fragmento dentro de `templates/hub-shell.php`;
+- **documento completo**: HTML íntegro de una IA, con los hooks de WordPress
+  inyectados de vuelta;
+- **package**: servido desde su carpeta con `<base>` para que las rutas
+  relativas funcionen.
 
-También puede ocurrir:
+En todos los casos se conservan `wp_head()`, `wp_body_open()` y `wp_footer()`.
+Es lo que mantiene SEO, analítica e integraciones sin usar el markup del theme.
 
-```text
-HEADER     HUB
-HERO       HUB
-RESTO      Elementor
-FOOTER     HUB
-```
+## Contrato para la IA
 
-Este será el modo principal de transición de Tibox y Prodata.
+Un componente generado por IA es un ZIP con `manifest.json`, `index.html`,
+`style.css` opcional, `script.js` opcional y `assets/`. El manifest declara
+tipo, versión, variables y scope; las variables se validan contra el registro
+real del sitio y una desconocida aborta la importación en lugar de imprimirse
+literalmente en una página.
 
-### 3. HUB
+El contrato completo está en [`AI-PACKAGE-CONTRACT.md`](AI-PACKAGE-CONTRACT.md);
+el de formularios y tracking, en
+[`FORMS-AND-TRACKING.md`](FORMS-AND-TRACKING.md).
 
-HUB controla el template de la URL completa.
+Un package **nunca** se publica al importarse: entra como versión borrador que
+hay que previsualizar y publicar explícitamente.
 
-El shell debe conservar los hooks WordPress necesarios:
+## Aislamiento
 
-- `wp_head()`;
-- `wp_body_open()`;
-- `wp_footer()`.
+El CSS de un diseño puede prefijarse automáticamente con su clase de scope
+(`HUB_Tibox_Css_Scoper`), lo que resuelve la mayoría de las colisiones con el
+theme y con Elementor. Es opcional por diseño y está desactivado en los
+migrados, porque se escribieron sin él.
 
-Esto permite mantener SEO, analítica e integraciones sin utilizar necesariamente el markup del theme.
-
-En este modo se pueden descargar assets de Elementor de forma selectiva y segura.
-
-## Theme actual vs HUB Theme futuro
-
-### Hoy
-
-Constructor HUB debe funcionar encima del theme existente.
-
-### Futuro
-
-Puede existir un **HUB Tibox Theme** ultraliviano que implemente únicamente el chasis WordPress:
-
-- `header.php`/shell;
-- `footer.php`/shell;
-- `page.php`;
-- `single.php`;
-- archives;
-- 404;
-- hooks y soporte WordPress.
-
-El contenido visual seguirá viviendo en Constructor HUB, por lo que cambiar desde Hello Elementor hacia HUB Theme no debe obligar a reconstruir componentes.
-
-## Component Registry objetivo
-
-Cada componente tendrá identidad y versión.
-
-Ejemplo conceptual:
-
-```text
-components/
-└─ header/
-   └─ corporate-v2/
-      ├─ manifest.json
-      ├─ index.html
-      ├─ style.css
-      ├─ script.js
-      └─ assets/
-```
-
-Tipos previstos:
-
-- header;
-- footer;
-- hero;
-- navigation;
-- section;
-- CTA;
-- form;
-- cards/grids;
-- page package.
-
-## Design Packages
-
-Se tomará como antecedente el sistema de `Cloud-tibox`.
-
-Formato objetivo:
-
-```text
-package.zip
-├─ manifest.json
-├─ index.html
-├─ style.css
-├─ script.js
-└─ assets/
-```
-
-Características requeridas:
-
-- validación y extracción segura;
-- preview sin publicar;
-- versionado;
-- rollback;
-- asignación por destino;
-- assets relativos;
-- CSS/JS cargado solo en destinos activos;
-- sin PHP arbitrario dentro del paquete.
-
-## Variables dinámicas
-
-La IA debe diseñar contra un contrato de variables y no hardcodear datos que WordPress conoce.
-
-Base propuesta:
-
-```text
-{{SITE_URL}}
-{{HOME_URL}}
-{{SITE_NAME}}
-{{CURRENT_YEAR}}
-{{CUSTOM_LOGO}}
-{{MENU_PRIMARY}}
-{{MENU_FOOTER}}
-
-{{PAGE_ID}}
-{{PAGE_TITLE}}
-{{PAGE_URL}}
-{{PAGE_EXCERPT}}
-{{PAGE_CONTENT}}
-{{FEATURED_IMAGE}}
-```
-
-Las variables específicas se deben agrupar por dominio y documentar.
+El CSS y el JS de la versión publicada se compilan a archivos en `uploads` y se
+encolan: caché de navegador, versionado por URL y compatibilidad con CSP. Si el
+filesystem no es escribible, se vuelve a la salida inline.
 
 ## Design System
 
-Cada sitio debe tener tokens configurables, no estilos Tibox dentro del core.
+Cada sitio define sus tokens `--hub-*`. Un componente correcto referencia
+`var(--hub-primary)`, nunca `#0f172a`. Es lo que permite mover un componente de
+tibox.cl a prodata.cl cambiando configuración y no código.
 
-Ejemplo:
+El core no contiene la identidad visual de ningún cliente. Si cambiar un logo,
+un color o una URL normal requiere editar el core, la separación está mal hecha.
 
-```css
---hub-primary
---hub-secondary
---hub-accent
---hub-text
---hub-background
---hub-font-heading
---hub-font-body
---hub-container
---hub-radius-sm
---hub-radius-md
---hub-radius-lg
---hub-section-space
-```
+## Elementor
 
-Los componentes generados por IA deben preferir estos tokens.
+Todo lo que sabe que Elementor existe vive en `includes/adapters/` y no hace
+nada cuando Elementor no está. El adaptador aporta el widget, la detección de
+Theme Builder y el filtro `constructor_hub_elementor_needed`, que responde si
+una página todavía necesita Elementor a partir del modo de edición guardado y
+del markup real.
 
-## Adaptador Elementor
-
-Responsabilidades futuras:
-
-- detectar Elementor/Elementor Pro;
-- identificar si una URL todavía necesita Elementor;
-- evitar descargar assets mientras una sección dependa de ellos;
-- en modo HUB completo, descargar CSS/JS no utilizados;
-- manejar Theme Builder Header/Footer cuando corresponda;
-- proporcionar una salida reversible.
-
-Nunca modificar directamente contenido Elementor sin una acción explícita.
-
-## Compatibilidad SEO/analítica
-
-Constructor HUB no debe intentar sustituir automáticamente el plugin SEO.
-
-Debe preservar los hooks del `<head>` y footer necesarios.
-
-Durante pruebas paralelas:
-
-- evitar contenido duplicado indexable;
-- usar `noindex` en prototipos cuando corresponda;
-- validar canonical;
-- validar Open Graph/schema;
-- validar GTM/dataLayer.
-
-## Formularios
-
-El frontend HUB debería poder usar formularios HTML propios y enviar datos a servicios/backend WordPress.
-
-Los endpoints, lógica de negocio y destinos deben desacoplarse del HTML del componente.
-
-El formulario del MVP Tibox es un caso específico y no debe convertirse en dependencia del core.
+La retirada de assets se apoya en ese inventario, está desactivada por defecto y
+nunca elimina un handle del que dependa algo todavía encolado. Adivinar por
+nombre de handle —lo que hacía el MVP— es cómo una página pierde una
+funcionalidad sin que nadie se entere.
 
 ## Seguridad
 
-Los paquetes visuales no pueden ejecutar PHP arbitrario.
-
-Nunca almacenar en paquetes:
-
-- API keys;
-- passwords;
-- tokens;
-- secretos de webhooks;
-- credenciales de servicios.
-
-Sanitizar HTML/configuración y validar uploads.
+- El código de diseño es HTML, CSS y JavaScript servidos en el origen del sitio:
+  editarlo exige la capacidad `hub_edit_design_code`, no el rol de Editor.
+- Los packages se validan antes de escribir un solo byte: traversal, symlinks,
+  allowlist de extensiones, archivos de configuración bloqueados, límites de
+  tamaño y verificación del tamaño real descomprimido.
+- Todo SVG se sanea en la importación.
+- PHP nunca se acepta dentro de un package ni se evalúa desde un diseño.
+- Los paquetes no pueden contener secretos, y el core no almacena credenciales
+  de ningún proveedor.
 
 ## Rendimiento
 
-Principios:
+- CSS y JS por diseño y por destino, en archivos cacheables.
+- El runtime del formulario solo se carga en páginas que contienen un formulario.
+- JavaScript nativo por defecto; ninguna librería por comodidad.
+- La retirada de assets de terceros se basa en inventario, nunca a ciegas.
 
-- CSS y JS por componente/destino;
-- JavaScript nativo por defecto;
-- no incluir librerías por comodidad si no son necesarias;
-- imágenes responsive/lazy salvo recurso LCP;
-- evitar render blocking innecesario;
-- no descargar assets de terceros a ciegas: validar dependencia real.
+## Compatibilidad
 
-## Estado heredado 0.1 → 0.2
-
-El MVP `Tibox AI Frontend` implementó primero páginas completas y eliminación agresiva de assets.
-
-Constructor HUB cambia la dirección hacia componentes e hibridación antes de páginas completas.
-
-Nombres internos heredados se conservarán temporalmente por compatibilidad y serán migrados con ADR/changelog.
+- El default mantiene el comportamiento existente; activar HUB es explícito.
+- La migración a diseños unificados corre en dos fases: primero copia cada
+  objeto histórico a un `hub_design` en borrador (stage); solo si el lote
+  completo no tuvo fallos, publica los nuevos diseños y retira los históricos
+  (cutover). Una migración parcial nunca activa el modelo unificado ni deja
+  contenido invisible: el sitio sigue exactamente como estaba.
+- El stage de cada objeto verifica sus pasos indispensables uno a uno —crear
+  la versión, publicarla, copiar el package si corresponde— antes de marcarlo
+  `_hub_migration_staged`. Un `Version_Store::create()` que devuelve `0` o una
+  copia de package que falla convierten el ítem en `failed`, nunca en
+  `created`; el diseño creado queda identificable (sin esa marca) para que un
+  reintento lo reanude en vez de duplicarlo.
+- La migración desde WPCode (`HUB_Tibox_Legacy_Migrator`, un origen histórico
+  distinto: `tibox_landing`, no `hub_component`/`hub_landing`) sigue el mismo
+  principio: `migrate_landing()` solo reporta una landing como migrada cuando
+  su versión se creó, se publicó y su package —si lo tiene— se copió; de lo
+  contrario la landing sigue pendiente y reintentable, y `run_cutover()`
+  vuelve a verificar de forma independiente que la versión publicada del
+  diseño sea realmente renderizable antes de traspasar la URL.
+- La unificación es reversible con `HUB_Tibox_Upgrade::rollback_to_legacy()`
+  (`Constructor HUB → Diagnóstico` o `wp hub rollback-to-legacy`), que restaura
+  el estado que tenía cada objeto histórico antes del cutover, no solo apaga
+  una opción.
+- Los post types históricos siguen registrados y sus datos intactos.
+- El HUB Theme es opcional y no se empaqueta con el plugin.

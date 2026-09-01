@@ -11,9 +11,11 @@ final class HUB_Tibox_Landing_Forms
 {
     private const REST_NAMESPACE = 'constructor-hub/v1';
     private const REST_ROUTE = '/landing-submit';
+    private const LEGACY_NAMESPACE = 'tibox/v1';
+    private const LEGACY_ROUTE = '/lead';
+    public const OPTION_IP_HEADER = 'hub_tibox_client_ip_header';
 
     private static ?self $instance = null;
-    private HUB_Tibox_Landing_Manager $landings;
     private HUB_Tibox_Landing_Lead_Store $store;
     private HUB_Tibox_Landing_Mailer $mailer;
 
@@ -21,7 +23,6 @@ final class HUB_Tibox_Landing_Forms
     {
         if (self::$instance === null) {
             self::$instance = new self(
-                HUB_Tibox_Landing_Manager::instance(),
                 HUB_Tibox_Landing_Lead_Store::instance(),
                 HUB_Tibox_Landing_Mailer::instance()
             );
@@ -30,21 +31,27 @@ final class HUB_Tibox_Landing_Forms
     }
 
     private function __construct(
-        HUB_Tibox_Landing_Manager $landings,
         HUB_Tibox_Landing_Lead_Store $store,
         HUB_Tibox_Landing_Mailer $mailer
     ) {
-        $this->landings = $landings;
         $this->store = $store;
         $this->mailer = $mailer;
 
         add_action('rest_api_init', [$this, 'register_rest_route']);
-        add_action('admin_menu', [$this, 'add_leads_page']);
     }
 
     public function register_rest_route(): void
     {
         register_rest_route(self::REST_NAMESPACE, self::REST_ROUTE, [
+            'methods' => WP_REST_Server::CREATABLE,
+            'callback' => [$this, 'handle_submission'],
+            'permission_callback' => '__return_true',
+        ]);
+
+        // Compatibility alias for the historical WPCode endpoint consumed by the
+        // MVP `home-ai` template. Keeping it registered here means retiring the
+        // WPCode snippet no longer silently breaks that form.
+        register_rest_route(self::LEGACY_NAMESPACE, self::LEGACY_ROUTE, [
             'methods' => WP_REST_Server::CREATABLE,
             'callback' => [$this, 'handle_submission'],
             'permission_callback' => '__return_true',
@@ -62,7 +69,7 @@ final class HUB_Tibox_Landing_Forms
             return $this->response(false, false, 'Origen no permitido.', 403);
         }
 
-        if (!$this->rate_limit_allows_submission()) {
+        if (!$this->attempt_budget_allows()) {
             return $this->response(false, false, 'Demasiados intentos. Intenta nuevamente en unos minutos.', 429);
         }
 
@@ -73,27 +80,45 @@ final class HUB_Tibox_Landing_Forms
         $payload = is_array($payload) ? $payload : [];
 
         $landing_id = absint($payload['landing_id'] ?? 0);
-        if (
-            $landing_id <= 0 ||
-            get_post_type($landing_id) !== HUB_Tibox_Landing_Manager::POST_TYPE ||
-            get_post_status($landing_id) !== 'publish'
-        ) {
-            return $this->response(false, false, 'Landing no válida.', 400);
+        if ($landing_id <= 0 || get_post_status($landing_id) !== 'publish') {
+            return $this->response(false, false, 'Origen del formulario no válido.', 400);
         }
 
-        $submission_id = sanitize_text_field((string) ($payload['submission_id'] ?? ''));
+        $host_type = (string) get_post_type($landing_id);
+        $source_key = in_array($host_type, [HUB_Tibox_Design::POST_TYPE, 'hub_landing'], true)
+            ? 'constructor_hub_landing'
+            : 'constructor_hub_page';
+
+        // The submission id is client supplied. The column is varchar(100) and a
+        // longer value would abort the INSERT on MySQL strict mode.
+        $submission_id = $this->truncate(
+            sanitize_text_field((string) ($payload['submission_id'] ?? '')),
+            100
+        );
         if ($submission_id === '') {
             $submission_id = wp_generate_uuid4();
         }
 
-        if (trim((string) ($payload['website'] ?? '')) !== '') {
-            return $this->response(
-                true,
-                false,
-                $this->landings->get_success_message($landing_id),
-                200,
-                $submission_id
-            );
+        $spam_check = HUB_Tibox_Antispam::validate(
+            $landing_id,
+            sanitize_text_field((string) ($payload['hub_token'] ?? '')),
+            $payload
+        );
+
+        if (is_wp_error($spam_check)) {
+            // The honeypot answers with success on purpose: a bot that learns it
+            // was detected simply tries again without the trap.
+            if ($spam_check->get_error_code() === 'hub_honeypot') {
+                return $this->response(
+                    true,
+                    false,
+                    HUB_Tibox_Form_Config::success_message($landing_id),
+                    200,
+                    $submission_id
+                );
+            }
+
+            return $this->response(false, false, $spam_check->get_error_message(), 422, $submission_id);
         }
 
         $existing = $this->store->find_by_submission_id($submission_id);
@@ -101,7 +126,7 @@ final class HUB_Tibox_Landing_Forms
             return $this->response(
                 true,
                 false,
-                $this->landings->get_success_message($landing_id),
+                HUB_Tibox_Form_Config::success_message($landing_id),
                 200,
                 $submission_id,
                 $existing
@@ -122,13 +147,30 @@ final class HUB_Tibox_Landing_Forms
             ], 422);
         }
 
+        if (!$this->creation_budget_allows((string) ($fields['email'] ?? ''))) {
+            return $this->response(
+                false,
+                false,
+                'Ya registramos varias solicitudes recientes con estos datos. Intenta nuevamente más tarde.',
+                429,
+                $submission_id
+            );
+        }
+
         $lead_id = $this->store->insert([
             'submission_id' => $submission_id,
             'landing_id' => $landing_id,
             'form_id' => sanitize_key((string) ($payload['form_id'] ?? 'hub-landing-form')),
-            'source_key' => 'constructor_hub_landing',
+            'source_key' => $source_key,
             'fields' => $fields,
             'tracking' => $tracking,
+            'consent_url' => (string) apply_filters(
+                'constructor_hub_privacy_url',
+                home_url('/aviso-de-privacidad/'),
+                $landing_id
+            ),
+            'consent_version' => (string) apply_filters('constructor_hub_privacy_version', '', $landing_id),
+            'ip_hash' => hash_hmac('sha256', $this->client_ip(), wp_salt('auth')),
         ]);
 
         if ($lead_id <= 0) {
@@ -141,6 +183,8 @@ final class HUB_Tibox_Landing_Forms
             );
         }
 
+        $this->register_created_submission((string) ($fields['email'] ?? ''));
+
         $this->mailer->send_lead_notifications($landing_id, $lead_id, $fields, $tracking);
 
         do_action(
@@ -151,6 +195,7 @@ final class HUB_Tibox_Landing_Forms
             $tracking
         );
 
+        // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- documented bridge for the historical WPCode integrations; see docs/CHANGELOG.md.
         do_action('tibox_landing_lead_created', array_merge(
             $fields,
             $tracking,
@@ -158,14 +203,14 @@ final class HUB_Tibox_Landing_Forms
                 'lead_id' => $lead_id,
                 'landing_id' => $landing_id,
                 'submission_id' => $submission_id,
-                'source_key' => 'constructor_hub_landing',
+                'source_key' => $source_key,
             ]
         ));
 
         return $this->response(
             true,
             true,
-            $this->landings->get_success_message($landing_id),
+            HUB_Tibox_Form_Config::success_message($landing_id),
             201,
             $submission_id,
             $lead_id
@@ -174,7 +219,7 @@ final class HUB_Tibox_Landing_Forms
 
     public function render_default_form(int $landing_id): string
     {
-        $required = $this->landings->get_required_fields($landing_id);
+        $required = HUB_Tibox_Form_Config::required_fields($landing_id);
         $privacy_url = (string) apply_filters(
             'constructor_hub_privacy_url',
             home_url('/aviso-de-privacidad/'),
@@ -224,6 +269,7 @@ final class HUB_Tibox_Landing_Forms
             <div class="hub-landing-form__honeypot" aria-hidden="true">
                 <label>Website <input type="text" name="website" tabindex="-1" autocomplete="off"></label>
             </div>
+            <input type="hidden" name="hub_token" value="<?php echo esc_attr(HUB_Tibox_Antispam::issue_token($landing_id)); ?>">
             <button type="submit" class="hub-landing-form__submit">Enviar consulta</button>
             <p class="hub-landing-form__status" data-hub-form-status aria-live="polite"></p>
             <input type="hidden" name="landing_id" value="<?php echo esc_attr((string) $landing_id); ?>">
@@ -233,87 +279,89 @@ final class HUB_Tibox_Landing_Forms
         return (string) ob_get_clean();
     }
 
-    public function add_leads_page(): void
-    {
-        if (!class_exists('HUB_Tibox_Component_Manager')) {
-            return;
-        }
-
-        add_submenu_page(
-            'edit.php?post_type=' . HUB_Tibox_Component_Manager::POST_TYPE,
-            'Leads de Landings',
-            'Leads',
-            'manage_options',
-            'constructor-hub-leads',
-            [$this, 'render_leads_page']
-        );
-    }
-
     public function render_leads_page(): void
     {
-        if (!current_user_can('manage_options')) {
-            wp_die('No autorizado.');
+        if (!HUB_Tibox_Capabilities::can_manage_leads()) {
+            wp_die(esc_html__('No autorizado.', 'constructor-hub-tibox'));
         }
 
-        $this->store->maybe_install_table();
-        global $wpdb;
-        $table = $this->store->table_name();
-
+        $store = $this->store;
         $per_page = 50;
         $page = isset($_GET['paged']) ? max(1, absint($_GET['paged'])) : 1;
-        $offset = ($page - 1) * $per_page;
         $landing_id = isset($_GET['landing_id']) ? absint($_GET['landing_id']) : 0;
 
-        if ($landing_id > 0) {
-            $total = (int) $wpdb->get_var($wpdb->prepare(
-                "SELECT COUNT(*) FROM {$table} WHERE landing_id = %d",
-                $landing_id
-            ));
-            $rows = $wpdb->get_results($wpdb->prepare(
-                "SELECT * FROM {$table} WHERE landing_id = %d ORDER BY created_at DESC, id DESC LIMIT %d OFFSET %d",
-                $landing_id,
-                $per_page,
-                $offset
-            ), ARRAY_A);
-        } else {
-            $total = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table}");
-            $rows = $wpdb->get_results($wpdb->prepare(
-                "SELECT * FROM {$table} ORDER BY created_at DESC, id DESC LIMIT %d OFFSET %d",
-                $per_page,
-                $offset
-            ), ARRAY_A);
-        }
-        $rows = is_array($rows) ? $rows : [];
+        $total = $store->count(['landing_id' => $landing_id]);
+        $rows = $store->query([
+            'landing_id' => $landing_id,
+            'limit' => $per_page,
+            'offset' => ($page - 1) * $per_page,
+        ]);
 
-        $landings = get_posts([
-            'post_type' => HUB_Tibox_Landing_Manager::POST_TYPE,
+        $hosts = get_posts([
+            'post_type' => array_values(array_filter([
+                class_exists('HUB_Tibox_Design') ? HUB_Tibox_Design::POST_TYPE : '',
+                'hub_landing',
+            ])),
             'post_status' => 'any',
-            'posts_per_page' => -1,
+            'posts_per_page' => 200,
             'orderby' => 'title',
             'order' => 'ASC',
         ]);
+
+        $notice = isset($_GET['hub_notice']) ? sanitize_key(wp_unslash($_GET['hub_notice'])) : '';
         ?>
         <div class="wrap">
-            <h1>Leads de Landings</h1>
+            <h1>Leads de formularios</h1>
             <p>Fuente de verdad local de los formularios gestionados por Constructor HUB.</p>
-            <form method="get" style="margin:16px 0;">
-                <input type="hidden" name="post_type" value="<?php echo esc_attr(HUB_Tibox_Component_Manager::POST_TYPE); ?>">
+
+            <?php if ($notice === 'lead_deleted') : ?>
+                <div class="notice notice-success is-dismissible"><p>Lead eliminado.</p></div>
+            <?php endif; ?>
+
+            <form method="get" style="margin:16px 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
                 <input type="hidden" name="page" value="constructor-hub-leads">
-                <label for="hub-lead-filter"><strong>Landing:</strong></label>
+                <label for="hub-lead-filter"><strong>Origen:</strong></label>
                 <select id="hub-lead-filter" name="landing_id">
-                    <option value="0">Todas las landings</option>
-                    <?php foreach ($landings as $landing) : ?>
-                        <option value="<?php echo esc_attr((string) $landing->ID); ?>" <?php selected($landing_id, $landing->ID); ?>>
-                            <?php echo esc_html($landing->post_title ?: ('Landing #' . $landing->ID)); ?>
+                    <option value="0">Todos</option>
+                    <?php foreach ($hosts as $host) : ?>
+                        <option value="<?php echo esc_attr((string) $host->ID); ?>" <?php selected($landing_id, $host->ID); ?>>
+                            <?php echo esc_html($host->post_title ?: ('#' . $host->ID)); ?>
                         </option>
                     <?php endforeach; ?>
                 </select>
                 <?php submit_button('Filtrar', 'secondary', '', false); ?>
+
+                <?php if (HUB_Tibox_Capabilities::can_export_leads()) : ?>
+                    <a class="button" href="<?php echo esc_url(wp_nonce_url(add_query_arg([
+                        'action' => 'hub_tibox_export_leads',
+                        'landing_id' => $landing_id,
+                    ], admin_url('admin-post.php')), 'hub_tibox_export_leads')); ?>">Exportar CSV</a>
+
+                    <a class="button" href="<?php echo esc_url(wp_nonce_url(add_query_arg(
+                        'action',
+                        'hub_tibox_export_conversions',
+                        admin_url('admin-post.php')
+                    ), 'hub_tibox_export_conversions')); ?>">Conversiones Google Ads</a>
+                <?php endif; ?>
             </form>
 
-            <p><strong>Total:</strong> <?php echo esc_html((string) $total); ?> leads.</p>
+            <p>
+                <strong>Total:</strong> <?php echo esc_html((string) $total); ?> leads.
+                <?php
+                $retention = (int) get_option('hub_tibox_lead_retention_months', 0);
+                if ($retention > 0) {
+                    printf(' Retención automática: %s meses.', esc_html((string) $retention));
+                }
+                ?>
+            </p>
+
             <?php $this->render_rows_table($rows); ?>
             <?php $this->render_pagination($page, $per_page, $total, $landing_id); ?>
+
+            <p class="description">
+                La exportación de conversiones incluye solo leads marcados como <em>Calificado</em> o <em>Ganado</em>
+                que traen un click ID de Google Ads, y marca cada uno como exportado para no contarlo dos veces.
+            </p>
         </div>
         <?php
     }
@@ -326,23 +374,87 @@ final class HUB_Tibox_Landing_Forms
             return;
         }
 
-        echo '<div style="overflow-x:auto"><table class="widefat striped" style="min-width:1500px;font-size:12px">';
-        echo '<thead><tr><th>Fecha</th><th>Landing</th><th>Nombre</th><th>Email</th><th>Teléfono</th><th>Empresa</th><th>RUT</th><th>Área</th><th>Mensaje</th><th>UTM</th><th>Ads IDs</th><th>Submission</th></tr></thead><tbody>';
+        $statuses = [
+            'new' => 'Nuevo',
+            'qualified' => 'Calificado',
+            'won' => 'Ganado',
+            'lost' => 'Perdido',
+        ];
+
+        echo '<div style="overflow-x:auto"><table class="widefat striped" style="min-width:1400px;font-size:12px">';
+        echo '<thead><tr><th>Fecha</th><th>Origen</th><th>Contacto</th><th>Empresa</th><th>Mensaje</th><th>Campaña</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>';
 
         foreach ($rows as $row) {
+            $lead_id = (int) $row['id'];
+            $status = (string) ($row['conversion_status'] ?? 'new');
+
             echo '<tr>';
             echo '<td>' . esc_html((string) $row['created_at']) . '</td>';
             echo '<td>' . esc_html(get_the_title((int) $row['landing_id']) ?: ('#' . (int) $row['landing_id'])) . '</td>';
-            echo '<td><strong>' . esc_html((string) $row['name']) . '</strong></td>';
-            echo '<td><a href="mailto:' . esc_attr((string) $row['email']) . '">' . esc_html((string) $row['email']) . '</a></td>';
-            echo '<td>' . esc_html((string) $row['phone']) . '</td>';
-            echo '<td>' . esc_html((string) $row['company']) . '</td>';
-            echo '<td>' . esc_html((string) $row['rut']) . '</td>';
-            echo '<td>' . esc_html((string) $row['area']) . '</td>';
-            echo '<td style="max-width:300px;white-space:normal">' . nl2br(esc_html((string) $row['message'])) . '</td>';
-            echo '<td>' . $this->meta_line('source', (string) $row['utm_source']) . $this->meta_line('medium', (string) $row['utm_medium']) . $this->meta_line('campaign', (string) $row['utm_campaign']) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
-            echo '<td>' . $this->meta_line('gclid', (string) $row['gclid']) . $this->meta_line('gbraid', (string) $row['gbraid']) . $this->meta_line('wbraid', (string) $row['wbraid']) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
-            echo '<td><code style="word-break:break-all">' . esc_html((string) $row['submission_id']) . '</code></td>';
+
+            echo '<td><strong>' . esc_html((string) $row['name']) . '</strong><br>';
+            echo '<a href="mailto:' . esc_attr((string) $row['email']) . '">' . esc_html((string) $row['email']) . '</a>';
+            if ((string) $row['phone'] !== '') {
+                echo '<br>' . esc_html((string) $row['phone']);
+            }
+            echo '</td>';
+
+            echo '<td>' . esc_html((string) $row['company']);
+            if ((string) $row['rut'] !== '') {
+                echo '<br><code>' . esc_html((string) $row['rut']) . '</code>';
+            }
+            echo '</td>';
+
+            echo '<td style="max-width:280px;white-space:normal">' . nl2br(esc_html((string) $row['message'])) . '</td>';
+
+            echo '<td>';
+            // phpcs:disable WordPress.Security.EscapeOutput.OutputNotEscaped -- meta_line() escapes both label and value.
+            echo $this->meta_line('source', (string) $row['utm_source']);
+            echo $this->meta_line('campaign', (string) $row['utm_campaign']);
+            echo $this->meta_line('gclid', (string) $row['gclid']);
+            echo $this->meta_line('gbraid', (string) $row['gbraid']);
+            echo $this->meta_line('wbraid', (string) $row['wbraid']);
+            // phpcs:enable WordPress.Security.EscapeOutput.OutputNotEscaped
+            if ((string) ($row['conversion_exported_at'] ?? '') !== '') {
+                echo '<div><em>exportado</em></div>';
+            }
+            echo '</td>';
+
+            echo '<td>';
+            printf('<form method="post" action="%s">', esc_url(admin_url('admin-post.php')));
+            wp_nonce_field('hub_tibox_update_lead_' . $lead_id);
+            printf(
+                '<input type="hidden" name="action" value="hub_tibox_update_lead"><input type="hidden" name="lead_id" value="%d">',
+                (int) $lead_id
+            );
+            echo '<select name="conversion_status" style="width:100%">';
+            foreach ($statuses as $value => $label) {
+                printf(
+                    '<option value="%s"%s>%s</option>',
+                    esc_attr($value),
+                    selected($status, $value, false),
+                    esc_html($label)
+                );
+            }
+            echo '</select>';
+            printf(
+                '<input type="text" name="conversion_value" value="%s" placeholder="Valor" style="width:100%%;margin-top:4px;">',
+                esc_attr((string) ($row['conversion_value'] ?? ''))
+            );
+            echo '<button type="submit" class="button button-small" style="margin-top:4px;">Guardar</button>';
+            echo '</form>';
+            echo '</td>';
+
+            echo '<td>';
+            printf(
+                '<a class="button button-small" href="%s">Eliminar</a>',
+                esc_url(wp_nonce_url(add_query_arg([
+                    'action' => 'hub_tibox_delete_lead',
+                    'lead_id' => $lead_id,
+                ], admin_url('admin-post.php')), 'hub_tibox_delete_lead_' . $lead_id))
+            );
+            echo '</td>';
+
             echo '</tr>';
         }
 
@@ -356,21 +468,18 @@ final class HUB_Tibox_Landing_Forms
             return;
         }
 
-        $args = [
-            'post_type' => HUB_Tibox_Component_Manager::POST_TYPE,
-            'page' => 'constructor-hub-leads',
-        ];
+        $args = ['page' => 'constructor-hub-leads'];
         if ($landing_id > 0) {
             $args['landing_id'] = $landing_id;
         }
 
         echo '<p style="margin-top:16px">';
         if ($page > 1) {
-            echo '<a class="button" href="' . esc_url(add_query_arg(array_merge($args, ['paged' => $page - 1]), admin_url('edit.php'))) . '">← Anterior</a> ';
+            echo '<a class="button" href="' . esc_url(add_query_arg(array_merge($args, ['paged' => $page - 1]), admin_url('admin.php'))) . '">← Anterior</a> ';
         }
         echo '<span style="margin:0 10px">Página ' . esc_html((string) $page) . ' de ' . esc_html((string) $pages) . '</span>';
         if ($page < $pages) {
-            echo ' <a class="button" href="' . esc_url(add_query_arg(array_merge($args, ['paged' => $page + 1]), admin_url('edit.php'))) . '">Siguiente →</a>';
+            echo ' <a class="button" href="' . esc_url(add_query_arg(array_merge($args, ['paged' => $page + 1]), admin_url('admin.php'))) . '">Siguiente →</a>';
         }
         echo '</p>';
     }
@@ -379,7 +488,7 @@ final class HUB_Tibox_Landing_Forms
     private function sanitize_form_fields(array $payload): array
     {
         $reserved = [
-            'landing_id', 'submission_id', 'form_id', 'website',
+            'landing_id', 'submission_id', 'form_id', 'website', 'hub_token',
             'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
             'gclid', 'gbraid', 'wbraid', 'landing_url', 'landing_path', 'page_title',
         ];
@@ -439,7 +548,7 @@ final class HUB_Tibox_Landing_Forms
             $errors['privacy'] = 'Debes aceptar el aviso de privacidad.';
         }
 
-        foreach ($this->landings->get_required_fields($landing_id) as $field) {
+        foreach (HUB_Tibox_Form_Config::required_fields($landing_id) as $field) {
             $value = $fields[$field] ?? '';
             if (is_array($value) ? $value === [] : trim((string) $value) === '') {
                 $errors[$field] = 'Este campo es obligatorio.';
@@ -479,40 +588,153 @@ final class HUB_Tibox_Landing_Forms
         return hash_equals($expected, $provided);
     }
 
+    /**
+     * Reject only requests that positively declare a foreign origin.
+     *
+     * The previous implementation compared the raw host against home_url() and
+     * rejected `www.` variants and site aliases, which silently dropped real
+     * leads on paid campaigns. A missing header is not treated as proof of
+     * anything: spam control belongs to the honeypot and the rate budgets.
+     */
     private function origin_is_allowed(WP_REST_Request $request): bool
     {
-        $site_host = strtolower((string) wp_parse_url(home_url('/'), PHP_URL_HOST));
-        if ($site_host === '') {
+        $allowed = $this->allowed_hosts();
+        if ($allowed === []) {
             return true;
         }
 
         foreach (['origin', 'referer'] as $header) {
             $value = (string) $request->get_header($header);
-            if ($value === '') {
+            if ($value === '' || strtolower($value) === 'null') {
                 continue;
             }
-            $host = strtolower((string) wp_parse_url($value, PHP_URL_HOST));
-            if ($host !== '' && $host !== $site_host) {
+
+            $host = $this->normalize_host((string) wp_parse_url($value, PHP_URL_HOST));
+            if ($host !== '' && !in_array($host, $allowed, true)) {
                 return false;
             }
         }
+
         return true;
     }
 
-    private function rate_limit_allows_submission(): bool
+    /** @return string[] */
+    private function allowed_hosts(): array
     {
-        $ip = isset($_SERVER['REMOTE_ADDR'])
-            ? sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR']))
+        $hosts = [];
+        foreach ([home_url('/'), site_url('/'), (string) get_option('siteurl')] as $url) {
+            $host = $this->normalize_host((string) wp_parse_url((string) $url, PHP_URL_HOST));
+            if ($host !== '') {
+                $hosts[] = $host;
+            }
+        }
+
+        $hosts = array_map(
+            fn($host): string => $this->normalize_host((string) $host),
+            (array) apply_filters('constructor_hub_allowed_origins', $hosts)
+        );
+
+        return array_values(array_unique(array_filter($hosts)));
+    }
+
+    private function normalize_host(string $host): string
+    {
+        $host = strtolower(trim($host));
+        return str_starts_with($host, 'www.') ? substr($host, 4) : $host;
+    }
+
+    /**
+     * Best effort client IP.
+     *
+     * REMOTE_ADDR is the only value that cannot be spoofed, but behind a CDN it
+     * is the proxy address and would rate limit the whole site as one visitor.
+     * The forwarding header is therefore opt-in: it must be configured by an
+     * administrator who knows the site sits behind that proxy.
+     */
+    private function client_ip(): string
+    {
+        $header = (string) apply_filters(
+            'constructor_hub_client_ip_header',
+            (string) get_option(self::OPTION_IP_HEADER, '')
+        );
+
+        if ($header !== '') {
+            $header = strtoupper(str_replace('-', '_', $header));
+            if (!str_starts_with($header, 'HTTP_') && $header !== 'REMOTE_ADDR') {
+                $header = 'HTTP_' . $header;
+            }
+            if (!empty($_SERVER[$header])) {
+                $raw = sanitize_text_field(wp_unslash((string) $_SERVER[$header]));
+                foreach (explode(',', $raw) as $candidate) {
+                    $candidate = trim($candidate);
+                    if (filter_var($candidate, FILTER_VALIDATE_IP)) {
+                        return $candidate;
+                    }
+                }
+            }
+        }
+
+        return isset($_SERVER['REMOTE_ADDR'])
+            ? sanitize_text_field(wp_unslash((string) $_SERVER['REMOTE_ADDR']))
             : 'unknown';
-        $hash = hash_hmac('sha256', $ip, wp_salt('auth'));
-        $key = 'hub_lp_rate_' . substr($hash, 0, 24);
+    }
+
+    private function budget_key(string $prefix, string $value): string
+    {
+        return 'hub_lp_' . $prefix . '_' . substr(hash_hmac('sha256', $value, wp_salt('auth')), 0, 24);
+    }
+
+    /**
+     * Ceiling for raw attempts. Deliberately generous: a visitor correcting a
+     * RUT or an email must never be locked out of the form.
+     */
+    private function attempt_budget_allows(): bool
+    {
+        $max = (int) apply_filters('constructor_hub_max_attempts_per_window', 60);
+        $key = $this->budget_key('att', $this->client_ip());
         $count = (int) get_transient($key);
 
-        if ($count >= 8) {
+        if ($count >= $max) {
             return false;
         }
+
         set_transient($key, $count + 1, 10 * MINUTE_IN_SECONDS);
         return true;
+    }
+
+    /**
+     * Budget for leads that are actually created. The email based key keeps
+     * working when every visitor shares a proxy address.
+     */
+    private function creation_budget_allows(string $email): bool
+    {
+        $max_ip = (int) apply_filters('constructor_hub_max_leads_per_ip', 12);
+        $max_email = (int) apply_filters('constructor_hub_max_leads_per_email', 3);
+
+        if ((int) get_transient($this->budget_key('ip', $this->client_ip())) >= $max_ip) {
+            return false;
+        }
+
+        $email = strtolower(trim($email));
+        if ($email !== '' && (int) get_transient($this->budget_key('mail', $email)) >= $max_email) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private function register_created_submission(string $email): void
+    {
+        $ip_key = $this->budget_key('ip', $this->client_ip());
+        set_transient($ip_key, ((int) get_transient($ip_key)) + 1, 10 * MINUTE_IN_SECONDS);
+
+        $email = strtolower(trim($email));
+        if ($email === '') {
+            return;
+        }
+
+        $mail_key = $this->budget_key('mail', $email);
+        set_transient($mail_key, ((int) get_transient($mail_key)) + 1, HOUR_IN_SECONDS);
     }
 
     private function truncate(string $value, int $length): string

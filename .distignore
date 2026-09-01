@@ -1,0 +1,14 @@
+.git
+.github
+.gitignore
+.distignore
+composer.json
+composer.lock
+phpcs.xml.dist
+phpstan.neon.dist
+docs
+examples
+tests
+theme
+vendor
+dist

@@ -42,6 +42,11 @@ final class HUB_Tibox_Landing_Renderer
         if (!$this->is_landing_request()) {
             return;
         }
+        // A full document render bypasses the theme entirely, so WordPress never
+        // gets the chance to apply its own password gate.
+        if (post_password_required(get_queried_object_id())) {
+            return;
+        }
         $landing_id = get_queried_object_id();
         if ($this->landings->get_mode($landing_id) !== HUB_Tibox_Landing_Manager::MODE_STANDALONE) {
             return;
@@ -104,7 +109,8 @@ final class HUB_Tibox_Landing_Renderer
             'landingId' => $landing_id,
             'landingUrl' => esc_url_raw(get_permalink($landing_id)),
             'pageTitle' => sanitize_text_field(wp_get_document_title()),
-            'successMessage' => $this->landings->get_success_message($landing_id),
+            'successMessage' => HUB_Tibox_Form_Config::success_message($landing_id),
+            'formToken' => HUB_Tibox_Antispam::issue_token($landing_id),
             'eventName' => 'form_submit',
         ]);
     }

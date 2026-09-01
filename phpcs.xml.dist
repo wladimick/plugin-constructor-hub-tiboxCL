@@ -1,0 +1,78 @@
+<?xml version="1.0"?>
+<ruleset name="Constructor HUB Tibox">
+    <description>
+        Security oriented WordPress standard for Constructor HUB.
+
+        The goal of this ruleset is to catch escaping, SQL, capability and
+        input handling mistakes. Formatting sniffs are deliberately out of
+        scope: the code base predates the WPCS adoption and reformatting it
+        would bury real findings under thousands of whitespace diffs.
+    </description>
+
+    <file>.</file>
+    <exclude-pattern>/vendor/*</exclude-pattern>
+    <exclude-pattern>/node_modules/*</exclude-pattern>
+    <exclude-pattern>/dist/*</exclude-pattern>
+    <exclude-pattern>/examples/*</exclude-pattern>
+    <exclude-pattern>/tests/*</exclude-pattern>
+
+    <arg name="extensions" value="php"/>
+    <arg name="colors"/>
+    <arg value="ps"/>
+
+    <config name="minimum_supported_wp_version" value="6.2"/>
+    <config name="testVersion" value="8.0-"/>
+
+    <rule ref="PHPCompatibilityWP"/>
+
+    <rule ref="WordPress.Security">
+        <!--
+            Read only admin screens paginate and filter through $_GET. There is
+            nothing to protect with a nonce on a listing, and adding one would
+            break bookmarked links.
+        -->
+        <exclude name="WordPress.Security.NonceVerification.Recommended"/>
+    </rule>
+
+    <rule ref="WordPress.DB">
+        <!--
+            Constructor HUB owns two tables and queries them directly on
+            purpose: WP_Query cannot page over leads or design versions. Table
+            names are always built from $wpdb->prefix, never from input, and
+            every value goes through $wpdb->prepare().
+        -->
+        <exclude name="WordPress.DB.DirectDatabaseQuery"/>
+        <exclude name="WordPress.DB.PreparedSQL.InterpolatedNotPrepared"/>
+        <!--
+            meta_key/meta_value lookups run on admin screens and migrations,
+            not on front end requests.
+        -->
+        <exclude name="WordPress.DB.SlowDBQuery"/>
+    </rule>
+
+    <rule ref="WordPress.WP.I18n">
+        <properties>
+            <property name="text_domain" type="array">
+                <!-- The plugin and the optional HUB Theme ship from the same
+                     repository and each owns its own text domain. -->
+                <element value="constructor-hub-tibox"/>
+                <element value="hub-theme"/>
+            </property>
+        </properties>
+    </rule>
+
+    <rule ref="WordPress.NamingConventions.PrefixAllGlobals">
+        <properties>
+            <property name="prefixes" type="array">
+                <element value="hub_tibox"/>
+                <element value="constructor_hub"/>
+                <element value="HUB_Tibox"/>
+                <element value="TIBOX_AI"/>
+                <element value="hub_theme"/>
+                <element value="HUB_THEME"/>
+            </property>
+        </properties>
+        <!-- Template scope variables are not globals. -->
+        <exclude name="WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound"/>
+    </rule>
+</ruleset>

@@ -1,195 +1,175 @@
 # Roadmap — Constructor HUB Tibox
 
-Base: 2026-08-28. Actualizado: 2026-08-31.
+Base: 2026-08-28. Reescrito: 2026-08-31 tras la auditoría integral y la
+implementación de las fases 0 a 6 en `feat/hub-v0.5-refundacion`.
 
-El roadmap prioriza migración segura de sitios existentes antes que reemplazo total.
+El roadmap prioriza migración segura de sitios existentes antes que reemplazo
+total.
 
-## Fase 0 — Fundación del producto
+## Estado general
 
-Estado: **en curso**.
+| Fase | Alcance | Estado |
+| --- | --- | --- |
+| 0 | Bloqueadores de producción | **Implementada** |
+| 1 | Core sólido: diseño unificado y versionado | **Implementada** |
+| 2 | Componentes, Insertion API y Design System | **Implementada** |
+| 3 | Landings, formularios y leads | **Implementada** |
+| 4 | Design Packages e IA | **Implementada** |
+| 5 | Migración de Elementor y WPCode | **Implementada** |
+| 6 | HUB Theme opcional y multi-sitio | **Implementada** |
+| 7 | QA en WordPress real | **Pendiente — bloquea la release** |
 
-- [x] Renombrar concepto a Constructor HUB Tibox.
-- [x] Repositorio renombrado.
-- [x] Definir visión multi-sitio Tibox/Prodata.
-- [x] Definir arquitectura Legacy/Híbrido/HUB.
-- [x] Crear onboarding para IA.
-- [x] Crear protocolo de documentación.
-- [x] Documentar relación con Cloud-tibox.
-- [ ] Normalizar namespaces internos heredados de `Tibox AI Frontend` sin romper upgrades.
-- [x] Añadir CI básico PHP/JS.
+Ninguna fase debe considerarse cerrada hasta la Fase 7. Todo lo implementado
+pasó `php -l`, PHPCS con reglas de seguridad, PHPStan nivel 5 y el arnés de
+tests propio, pero **no se ha ejecutado en un WordPress real**.
 
-## Fase 1 — Header y Footer globales HUB
+## Fase 0 — Bloqueadores
 
-Prioridad inmediata.
+- [x] Validación de origen que no rechace envíos legítimos (CRIT-01).
+- [x] Límite de envíos con IP real detrás de proxy (CRIT-02).
+- [x] No descartar el diseño en silencio al guardar (CRIT-03).
+- [x] Endpoint del formulario del MVP servido por el plugin (CRIT-04).
+- [x] `post_password_required()` en los modos de documento completo (ALTO-01).
+- [x] Límite real de descompresión del ZIP (ALTO-02).
+- [x] Saneado de SVG en la importación (ALTO-03).
+- [x] Correos de empleados fuera del core (ALTO-07).
+- [x] `Reply-To` sin nombre interpolado (ALTO-10).
+- [x] Colisión `ARCHITECTURE.md` / `architecture.md` resuelta (MED-10).
+- [x] Hooks de activación y desactivación.
 
-Objetivo: poder reemplazar Header y/o Footer manteniendo el contenido existente de Elementor.
+## Fase 1 — Core sólido
 
-- [x] Registry de componentes globales — rama `feat/hybrid-header-footer`.
-- [x] tipo `header`.
-- [x] tipo `footer`.
-- [x] selección de componente activo.
-- [x] ámbito global o páginas seleccionadas.
-- [ ] preview solo para administradores.
-- [ ] publicar/rollback versionado.
-- [ ] evitar Header/Footer duplicados con Elementor Theme Builder/theme actual mediante adaptador.
-- [ ] adaptador Elementor para esta responsabilidad.
-- [x] mantener `wp_head`, `wp_body_open`, `wp_footer`.
-- [x] primer Header Tibox de prueba.
-- [x] primer Footer Tibox de prueba.
-- [ ] primer Header/Footer Prodata.
+- [x] CPT unificado `hub_design` con tipos.
+- [x] Tabla `wp_hub_design_versions`: draft / live / archived.
+- [x] Publicar, rollback y preview firmado.
+- [x] Registro único de variables con validación.
+- [x] Compilador de assets con aislamiento CSS opcional.
+- [x] Regiones Header y Footer independientes.
+- [x] Capacidades propias y menú de primer nivel.
+- [x] Migración idempotente y reversible desde los post types históricos.
+- [x] `uninstall.php` no destructivo.
+- [x] i18n, WPCS, PHPStan y tests en CI.
+- [ ] Normalizar el nombre del archivo bootstrap y las constantes heredadas.
+      Requiere una estrategia de actualización que no instale una segunda copia
+      del plugin.
 
-## Fase 2 — Design System
+## Fase 2 — Componentes y Design System
 
-- [ ] configuración por sitio.
-- [ ] tokens de color.
-- [ ] tipografías.
-- [ ] containers.
-- [ ] spacing.
-- [ ] radius.
-- [ ] botones/links base.
-- [ ] variables CSS `--hub-*`.
-- [ ] export/import del Design System.
+- [x] Shortcode `[hub_design]`.
+- [x] Bloque de Gutenberg con render en servidor.
+- [x] Widget de Elementor.
+- [x] Función de plantilla `constructor_hub_render()`.
+- [x] Regiones en modo `theme`, `inject` y `replace`.
+- [x] Tokens `--hub-*` con export e import.
+- [x] Adaptador Elementor con detección de Theme Builder.
+- [ ] Biblioteca inicial de componentes: hero, CTA, cards, logos.
+- [ ] Primer Header y Footer de Prodata sobre el mismo core.
+- [ ] Mega Menu real, más allá del tipo declarado.
 
-El core nunca debe hardcodear la identidad visual de Tibox.
+## Fase 3 — Landings, formularios y leads
 
-## Fase 3 — Biblioteca de componentes
+- [x] Token anti spam firmado y tiempo mínimo de envío.
+- [x] Punto de extensión para reCAPTCHA o Turnstile.
+- [x] Idempotencia que sobrevive al reintento.
+- [x] Correo encolado con registro de entregas.
+- [x] Evidencia de consentimiento por lead.
+- [x] Exportador y borrador de datos personales de WordPress.
+- [x] Retención configurable.
+- [x] Exportación CSV de leads.
+- [x] Conversiones offline de Google Ads.
+- [ ] Adaptador reCAPTCHA o Turnstile propiamente dicho.
+- [ ] Selector visual de campos del formulario, si un cliente lo pide.
+- [ ] Bridge CRM/WebOps sobre `constructor_hub_landing_lead_created`.
 
-- [ ] heroes.
-- [ ] CTAs.
-- [ ] grids/cards.
-- [ ] logos/partners.
-- [ ] navegación.
-- [x] base de formularios reutilizables mediante módulo Landings.
-- [ ] secciones genéricas.
-- [ ] shortcode/bloque de inserción temporal para páginas Elementor.
-- [ ] assets por componente.
-- [ ] preview/versionado.
+## Fase 4 — Design Packages e IA
 
-## Fase 4 — Design Packages v1
+- [x] `manifest.json` v1 con validación.
+- [x] Validación de variables contra el registro real.
+- [x] Importación como versión borrador, nunca sobre lo publicado.
+- [x] Importación para todos los tipos de diseño.
+- [x] Exportación a ZIP.
+- [x] Assets por versión.
+- [x] Contrato documentado y package de ejemplo verificado por los tests.
+- [ ] Importar un proyecto real de Claude Design de principio a fin.
+- [ ] Biblioteca compartida de packages entre sitios.
 
-Tomar como antecedente Cloud-tibox.
+## Fase 5 — Migración de Elementor y WPCode
 
-- [ ] `manifest.json`.
-- [ ] `index.html`.
-- [ ] `style.css`.
-- [ ] `script.js` opcional.
-- [ ] `assets/`.
-- [ ] import ZIP seguro.
-- [ ] validación manifest.
-- [ ] preview.
-- [ ] versión.
-- [ ] rollback.
-- [ ] asignación a tipo/destino.
-- [ ] variables dinámicas.
-- [ ] documentación específica Claude Design/ChatGPT.
+- [x] Mapa de migración por URL.
+- [x] Dequeue selectivo basado en el inventario.
+- [x] Migración WPCode por lotes con cursor.
+- [x] Traspaso de URL explícito con redirección 301.
+- [x] Comandos WP-CLI.
+- [x] MVP de página completa eliminado.
+- [ ] Migrar la home de Tibox.
+- [ ] Migrar la home de Prodata.
+- [ ] Medir Core Web Vitals antes y después de cada página migrada.
+- [ ] Desactivar los snippets WPCode uno a uno.
 
-## Fase 4A — Landings HUB
+## Fase 6 — HUB Theme opcional y multi-sitio
 
-Estado: **MVP implementado en `feat/landings-module`; QA WordPress pendiente**.
+- [x] Theme ultraliviano con hooks intactos.
+- [x] `theme.json` con los tokens como paleta del editor.
+- [x] Diagnóstico de compatibilidad.
+- [x] Export e import de configuración entre sitios.
+- [ ] Checklist de migración desde Hello Elementor validado en un sitio real.
+- [ ] Mecanismo de release y actualización del plugin.
 
-Objetivo: crear páginas de campaña completas con IA, formulario nativo y WordPress como backend, sin renderizar Elementor.
+## Fase 7 — QA en WordPress real
 
-- [x] menú `Landings` dentro de Constructor HUB.
-- [x] CPT público `hub_landing`.
-- [x] editor separado HTML/CSS/JS.
-- [x] renderer full-page independiente del theme.
-- [x] conservar `wp_head`, `wp_body_open`, `wp_footer`.
-- [x] variables dinámicas de sitio/landing.
-- [x] `{{HUB_FORM}}`.
-- [x] soporte formulario IA con `data-hub-landing-form`.
-- [x] REST endpoint genérico.
-- [x] almacenamiento de leads en WordPress.
-- [x] menú `Envíos Landings`.
-- [x] `wp_mail` por landing.
-- [x] UTM/GCLID/GBRAID/WBRAID.
-- [x] `dataLayer` `form_submit`.
-- [x] honeypot + rate limit + idempotencia.
-- [x] canvas independiente o Header/Footer HUB.
-- [x] Landing Starter de QA.
-- [ ] QA Rank Math/canonical.
-- [ ] QA GTM/dataLayer real.
-- [ ] QA correo real.
-- [ ] import ZIP directo desde Claude/ChatGPT.
-- [ ] selector de campos del formulario.
-- [ ] preview/versionado/rollback.
-- [ ] modo URL raíz como Page cuando sea necesario.
-- [ ] optimización/aggressive asset stripping por landing.
+**Esta fase bloquea cualquier declaración de release estable.**
 
-## Fase 5 — Página Híbrida
+Debe ejecutarse sobre una copia de tibox.cl, no sobre una instalación limpia:
+lo que hay que probar es la convivencia con el theme, Elementor, WPCode y los
+plugins existentes.
 
-- [ ] establecer modo por página.
-- [ ] Legacy.
-- [ ] Híbrido.
-- [ ] HUB.
-- [ ] combinar componentes HUB + `the_content()`.
-- [ ] mapa visual de qué tecnología renderiza cada sección.
-- [ ] estados de migración por página.
+### Instalación y migración
 
-## Fase 6 — Página HUB completa
+- [ ] Actualizar desde v0.4 y verificar que la migración a `hub_design` conserva
+      títulos, slugs, código, packages y configuración de Header/Footer.
+- [ ] Verificar que las URLs de landings publicadas siguen resolviendo.
+- [ ] Verificar que revertir `hub_tibox_designs_unified` a `0` devuelve el
+      comportamiento anterior.
 
-- [ ] renderer completo para Pages estándar.
-- [ ] plantillas Home/Página/Single/Archive/404.
-- [ ] eliminar assets Elementor solo cuando no sean necesarios.
-- [ ] conservar SEO/analítica.
-- [ ] migrar home Tibox.
-- [ ] migrar home Prodata.
-- [ ] medir Core Web Vitals antes/después.
+### Render
 
-Nota: el renderer de **Landings HUB** ya resuelve el caso especializado de página de campaña completa; esta fase se refiere a migrar Pages/plantillas WordPress generales.
+- [ ] Header HUB en modo `inject` sobre Hello Elementor, con y sin selector de
+      ocultación.
+- [ ] Ambas regiones en modo `replace`.
+- [ ] Landing en modo HUB, documento completo y package.
+- [ ] `[hub_design]` dentro de una página de Elementor.
+- [ ] Bloque HUB en el editor de bloques.
+- [ ] Widget HUB en el editor de Elementor.
+- [ ] Aislamiento CSS activado y desactivado.
+- [ ] Preview firmado desde una sesión sin iniciar.
+- [ ] Publicar una versión y hacer rollback.
 
-## Fase 7 — Adaptadores e integraciones
+### SEO y analítica
 
-### Elementor
-
-- [ ] detección Theme Builder.
-- [ ] assets dependency map.
-- [ ] compatibilidad Elementor Pro.
-- [ ] desactivación selectiva segura.
-
-### SEO
-
-- [ ] Rank Math validado.
-- [ ] contrato genérico que no dependa de Rank Math.
-
-### Analítica
-
-- [x] contrato `dataLayer` para Landings.
-- [ ] evitar tags duplicados.
+- [ ] Rank Math: title, description, canonical, Open Graph y schema en los tres
+      modos, incluido el documento completo.
+- [ ] Un solo contenedor GTM en la página.
+- [ ] `form_submit` una sola vez por lead creado.
+- [ ] Ningún tipo de diseño no visible indexable.
 
 ### Formularios
 
-- [x] interfaz backend genérica inicial para Landings.
-- [ ] adaptador endpoint Tibox/WebOps si se requiere.
-- [ ] adaptador WPForms si se requiere.
-- [ ] adaptador anti-spam externo opcional.
+- [ ] Envío correcto con el formulario estándar y con uno escrito por IA.
+- [ ] Honeypot, tiempo mínimo y límites por IP y por correo.
+- [ ] Reintento tras pérdida de respuesta: un solo lead.
+- [ ] Envío detrás de Cloudflare con la cabecera de IP configurada.
+- [ ] Correo interno y de confirmación entregados por SendGrid vía WP Mail SMTP.
+- [ ] Registro de entregas coherente con lo recibido.
 
-## Fase 8 — Migración de dependencias WPCode
+### Datos personales
 
-Solo después de inventario y QA.
+- [ ] Exportación y borrado desde las herramientas de WordPress.
+- [ ] Retención automática elimina lo esperado y nada más.
 
-- [ ] identificar snippets que pertenecen realmente al frontend HUB.
-- [ ] migrarlos al plugin.
-- [ ] mantener otros snippets fuera si no pertenecen al producto.
-- [ ] estrategia para evitar doble ejecución durante transición.
+### Rendimiento
 
-## Fase 9 — HUB Tibox Theme opcional
-
-No es requisito para usar Constructor HUB.
-
-- [ ] theme ultraliviano.
-- [ ] templates WordPress mínimos.
-- [ ] soporte blog/single/archive/404.
-- [ ] integración nativa con Constructor HUB.
-- [ ] herramienta/checklist de migración desde Hello Elementor/theme anterior.
-
-## Fase 10 — Operación multi-sitio
-
-- [ ] export/import configuración.
-- [ ] paquetes reutilizables por cliente.
-- [ ] separación core vs site adapters.
-- [ ] diagnósticos de compatibilidad.
-- [ ] estado de versiones instalado.
-- [ ] mecanismo de actualización/release.
+- [ ] Core Web Vitals antes y después en al menos tres páginas.
+- [ ] Optimizador de assets activado sin romper ninguna página del mapa.
 
 ## Criterio de éxito
 
@@ -197,10 +177,9 @@ Un sitio completamente migrado debería poder operar como:
 
 ```text
 WordPress backend
-+
-Constructor HUB Tibox
-+
-Theme existente o HUB Theme
++ Constructor HUB Tibox
++ theme existente o HUB Theme
 ```
 
-sin requerir Elementor para el render frontend de las páginas migradas, pero manteniendo una transición segura para las páginas que todavía lo utilicen.
+sin requerir Elementor para el render de las páginas migradas, y manteniendo una
+transición segura para las que todavía lo utilicen.

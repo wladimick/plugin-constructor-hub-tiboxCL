@@ -1,0 +1,13 @@
+{
+  "hub_package": 1,
+  "type": "hero",
+  "name": "Hero genérico HUB",
+  "slug": "hero-generico-hub",
+  "version": "1.0.0",
+  "site": "generic",
+  "entry": "index.html",
+  "scope": "hub-scope-hero-generico",
+  "description": "Hero de ejemplo que solo usa tokens del Design System y variables del contrato HUB.",
+  "variables": ["SITE_NAME", "PAGE_TITLE", "PRIVACY_URL"],
+  "tokens": ["--hub-primary", "--hub-accent", "--hub-text", "--hub-container", "--hub-radius-md", "--hub-font-heading"]
+}
