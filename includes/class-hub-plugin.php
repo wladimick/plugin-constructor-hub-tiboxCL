@@ -120,6 +120,7 @@ final class HUB_Tibox_Plugin
         HUB_Tibox_Asset_Compiler::instance();
         HUB_Tibox_Render::instance();
         HUB_Tibox_Insertion::instance();
+        HUB_Tibox_Page_Assignment::instance();
         HUB_Tibox_Design_System::instance();
         HUB_Tibox_Package::instance();
         HUB_Tibox_Asset_Optimizer::instance();

@@ -95,6 +95,16 @@ final class HUB_Tibox_Elementor_Adapter
             return $needed;
         }
 
+        // An existing WordPress Page explicitly assigned to a usable HUB page
+        // design no longer renders its Elementor body on the frontend. The
+        // Elementor data stays untouched for instant rollback.
+        if (
+            class_exists('HUB_Tibox_Page_Assignment')
+            && HUB_Tibox_Page_Assignment::instance()->owns_page($post_id)
+        ) {
+            return false;
+        }
+
         if (get_post_meta($post_id, '_elementor_edit_mode', true) === 'builder') {
             return true;
         }
