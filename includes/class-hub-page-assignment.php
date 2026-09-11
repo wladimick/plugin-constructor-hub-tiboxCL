@@ -94,9 +94,10 @@ final class HUB_Tibox_Page_Assignment
         $can_activate = current_user_can(HUB_Tibox_Capabilities::PUBLISH_DESIGNS)
             || current_user_can('manage_options');
         ?>
+        <?php $lock_assignment = !$can_activate && $mode === self::MODE_HUB; ?>
         <p>
             <label for="hub-assigned-design"><strong>Diseño HUB</strong></label>
-            <select id="hub-assigned-design" name="hub_assigned_design_id" style="width:100%;margin-top:6px;">
+            <select id="hub-assigned-design" name="hub_assigned_design_id" style="width:100%;margin-top:6px;" <?php disabled($lock_assignment); ?>>
                 <option value="0">— Sin asignar —</option>
                 <?php foreach ($designs as $design) : ?>
                     <option value="<?php echo esc_attr((string) $design->ID); ?>" <?php selected($assigned, $design->ID); ?>>
@@ -110,6 +111,10 @@ final class HUB_Tibox_Page_Assignment
                     </option>
                 <?php endforeach; ?>
             </select>
+            <?php if ($lock_assignment) : ?>
+                <input type="hidden" name="hub_assigned_design_id" value="<?php echo esc_attr((string) $assigned); ?>">
+                <span class="description">La URL está en modo HUB. Solo un usuario con permiso de publicación puede cambiar su diseño asignado.</span>
+            <?php endif; ?>
         </p>
 
         <p>
@@ -197,7 +202,16 @@ final class HUB_Tibox_Page_Assignment
 
         $can_activate = current_user_can(HUB_Tibox_Capabilities::PUBLISH_DESIGNS)
             || current_user_can('manage_options');
-        if ($mode === self::MODE_HUB && !$can_activate) {
+        $current_mode = self::mode($post_id);
+
+        // A user without publish permission may prepare an assignment while the
+        // page is still legacy, but cannot alter a URL that is already owned by
+        // HUB and cannot switch the public renderer.
+        if (!$can_activate && $current_mode === self::MODE_HUB) {
+            return;
+        }
+
+        if (!$can_activate) {
             $mode = self::MODE_THEME;
         }
 
