@@ -121,7 +121,7 @@ final class HUB_Tibox_Migration_Map
         $found = [];
         $content = (string) $post->post_content;
 
-        if (preg_match_all('/\\[hub_design[^\\]]*\\]/', $content, $matches)) {
+        if (preg_match_all('/\[hub_design[^\]]*\]/', $content, $matches)) {
             foreach ($matches[0] as $shortcode) {
                 $attributes = shortcode_parse_atts(trim($shortcode, '[]'));
                 $reference = (string) ($attributes['slug'] ?? $attributes['id'] ?? '');
@@ -131,7 +131,7 @@ final class HUB_Tibox_Migration_Map
             }
         }
 
-        if (preg_match_all('/"slug"\\s*:\\s*"([a-z0-9\\-]+)"/i', $content, $block_matches)) {
+        if (preg_match_all('/"slug"\s*:\s*"([a-z0-9\-]+)"/i', $content, $block_matches)) {
             foreach ($block_matches[1] as $slug) {
                 if (str_contains($content, 'constructor-hub/design')) {
                     $found[] = $slug;
