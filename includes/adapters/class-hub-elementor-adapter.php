@@ -66,7 +66,7 @@ final class HUB_Tibox_Elementor_Adapter
 
     public function register_widget($widgets_manager): void
     {
-        if (!class_exists('\Elementor\Widget_Base') || !is_object($widgets_manager)) {
+        if (!class_exists('\\Elementor\\Widget_Base') || !is_object($widgets_manager)) {
             return;
         }
 
@@ -93,6 +93,16 @@ final class HUB_Tibox_Elementor_Adapter
     {
         if (!self::is_active() || $post_id <= 0) {
             return $needed;
+        }
+
+        // An existing WordPress Page explicitly assigned to a usable HUB page
+        // design no longer renders its Elementor body on the frontend. The
+        // Elementor data stays untouched for instant rollback.
+        if (
+            class_exists('HUB_Tibox_Page_Assignment')
+            && HUB_Tibox_Page_Assignment::instance()->owns_page($post_id)
+        ) {
+            return false;
         }
 
         if (get_post_meta($post_id, '_elementor_edit_mode', true) === 'builder') {

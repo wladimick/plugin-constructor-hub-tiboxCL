@@ -52,6 +52,26 @@ final class HUB_Tibox_Migration_Map
             return ['renderer' => 'desconocido', 'elementor' => false, 'designs' => [], 'shortcodes' => 0, 'mode' => ''];
         }
 
+        if (
+            $post->post_type === 'page'
+            && class_exists('HUB_Tibox_Page_Assignment')
+            && HUB_Tibox_Page_Assignment::instance()->owns_page($post_id)
+        ) {
+            $design_id = HUB_Tibox_Page_Assignment::instance()->assigned_design_id($post_id);
+            $design = $design_id > 0 ? get_post($design_id) : null;
+            $reference = $design instanceof WP_Post && $design->post_name !== ''
+                ? $design->post_name
+                : ($design_id > 0 ? (string) $design_id : '');
+
+            return [
+                'renderer' => 'Constructor HUB — página asignada',
+                'elementor' => false,
+                'designs' => $reference !== '' ? [$reference] : [],
+                'shortcodes' => 0,
+                'mode' => 'assigned',
+            ];
+        }
+
         $needs_elementor = (bool) apply_filters('constructor_hub_elementor_needed', false, $post_id);
         $designs = $this->designs_in($post);
 
@@ -101,7 +121,7 @@ final class HUB_Tibox_Migration_Map
         $found = [];
         $content = (string) $post->post_content;
 
-        if (preg_match_all('/\[hub_design[^\]]*\]/', $content, $matches)) {
+        if (preg_match_all('/\\[hub_design[^\\]]*\\]/', $content, $matches)) {
             foreach ($matches[0] as $shortcode) {
                 $attributes = shortcode_parse_atts(trim($shortcode, '[]'));
                 $reference = (string) ($attributes['slug'] ?? $attributes['id'] ?? '');
@@ -111,7 +131,7 @@ final class HUB_Tibox_Migration_Map
             }
         }
 
-        if (preg_match_all('/"slug"\s*:\s*"([a-z0-9\-]+)"/i', $content, $block_matches)) {
+        if (preg_match_all('/"slug"\\s*:\\s*"([a-z0-9\\-]+)"/i', $content, $block_matches)) {
             foreach ($block_matches[1] as $slug) {
                 if (str_contains($content, 'constructor-hub/design')) {
                     $found[] = $slug;

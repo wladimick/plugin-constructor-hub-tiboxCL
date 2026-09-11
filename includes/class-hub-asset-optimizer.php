@@ -51,7 +51,16 @@ final class HUB_Tibox_Asset_Optimizer
             return;
         }
 
-        if (!HUB_Tibox_Render::instance()->is_hub_document()) {
+        $hub_owns_document = HUB_Tibox_Render::instance()->is_hub_document();
+        if (
+            !$hub_owns_document
+            && class_exists('HUB_Tibox_Page_Assignment')
+            && HUB_Tibox_Page_Assignment::instance()->owns_current_request()
+        ) {
+            $hub_owns_document = true;
+        }
+
+        if (!$hub_owns_document) {
             return;
         }
 
