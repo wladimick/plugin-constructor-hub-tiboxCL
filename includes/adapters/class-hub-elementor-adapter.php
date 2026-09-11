@@ -66,7 +66,7 @@ final class HUB_Tibox_Elementor_Adapter
 
     public function register_widget($widgets_manager): void
     {
-        if (!class_exists('\\Elementor\\Widget_Base') || !is_object($widgets_manager)) {
+        if (!class_exists('\Elementor\Widget_Base') || !is_object($widgets_manager)) {
             return;
         }
 
