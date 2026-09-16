@@ -151,6 +151,26 @@ final class HUB_Tibox_Variables
             return $content;
         }
 
+        // Editable content is deliberately resolved before the fixed variable
+        // registry. CONTENT.* is dynamic per design, so it does not belong in
+        // the global registry of SITE_/PAGE_/MENU_ variables.
+        if (
+            $design_id > 0
+            && str_contains($content, '{{CONTENT.')
+            && class_exists('HUB_Tibox_Content')
+            && class_exists('HUB_Tibox_Preview')
+        ) {
+            $version = HUB_Tibox_Preview::version_for($design_id);
+            if ($version !== null) {
+                $content = HUB_Tibox_Content::replace(
+                    $content,
+                    $design_id,
+                    $version,
+                    (int) ($context['content_host'] ?? 0)
+                );
+            }
+        }
+
         $used = self::used_in($content);
         if ($used === []) {
             return $content;
