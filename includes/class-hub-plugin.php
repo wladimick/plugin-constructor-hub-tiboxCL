@@ -117,6 +117,7 @@ final class HUB_Tibox_Plugin
         add_action('init', ['HUB_Tibox_Legacy_Types', 'register'], 4);
 
         HUB_Tibox_Design::instance();
+        HUB_Tibox_Content::instance();
         HUB_Tibox_Asset_Compiler::instance();
         HUB_Tibox_Render::instance();
         HUB_Tibox_Insertion::instance();
