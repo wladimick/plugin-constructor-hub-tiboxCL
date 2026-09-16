@@ -98,6 +98,11 @@ final class HUB_Tibox_Package
             );
         }
 
+        $content_schema = HUB_Tibox_Content::validate_schema((array) ($manifest['content_schema'] ?? []));
+        if (is_wp_error($content_schema)) {
+            return $content_schema;
+        }
+
         return [
             'hub_package' => $contract,
             'type' => $type,
@@ -111,6 +116,7 @@ final class HUB_Tibox_Package
             'scope' => sanitize_html_class((string) ($manifest['scope'] ?? '')),
             'mode' => sanitize_key((string) ($manifest['mode'] ?? '')),
             'description' => sanitize_textarea_field((string) ($manifest['description'] ?? '')),
+            'content_schema' => $content_schema,
         ];
     }
 
@@ -166,6 +172,26 @@ final class HUB_Tibox_Package
             );
         }
 
+        $unknown_content = HUB_Tibox_Content::unknown_references(
+            $html,
+            (array) ($manifest['content_schema'] ?? [])
+        );
+
+        if ($unknown_content !== []) {
+            HUB_Tibox_Filesystem::delete_directory($staging);
+
+            return new WP_Error(
+                'hub_package_content_schema',
+                sprintf(
+                    'El HTML usa campos CONTENT.* no declarados en content_schema: %s.',
+                    implode(', ', array_map(
+                        static fn(string $name): string => '{{CONTENT.' . $name . '}}',
+                        $unknown_content
+                    ))
+                )
+            );
+        }
+
         if ($design_id <= 0) {
             $design_id = $this->create_design($manifest);
 
@@ -210,6 +236,11 @@ final class HUB_Tibox_Package
         if ((string) $manifest['scope'] !== '') {
             update_post_meta($design_id, HUB_Tibox_Design::META_CSS_SCOPE, '1');
         }
+
+        HUB_Tibox_Content::seed_defaults(
+            $design_id,
+            (array) ($manifest['content_schema'] ?? [])
+        );
 
         return ['design_id' => $design_id, 'version_id' => $version_id, 'manifest' => $manifest];
     }
@@ -493,8 +524,21 @@ final class HUB_Tibox_Package
                 'site' => 'generic',
                 'entry' => 'index.html',
                 'scope' => 'hub-scope-hero-servicios-ti',
-                'variables' => ['SITE_NAME', 'HUB_FORM'],
+                'variables' => ['SITE_NAME'],
                 'tokens' => ['--hub-primary', '--hub-container'],
+                'content_schema' => [
+                    'hero.title' => [
+                        'type' => 'text',
+                        'label' => 'Título principal',
+                        'default' => 'Título editable',
+                        'group' => 'Hero',
+                    ],
+                    'hero.image' => [
+                        'type' => 'media',
+                        'label' => 'Imagen principal',
+                        'group' => 'Hero',
+                    ],
+                ],
             ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)); ?></pre>
 
             <p>
