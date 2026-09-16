@@ -116,6 +116,17 @@ final class HUB_Tibox_Admin_Menu
             <h1>Constructor HUB</h1>
             <p>Estado de la capa de presentación de este sitio.</p>
 
+            <?php if (HUB_Tibox_Capabilities::can_edit_design_code()) : ?>
+                <p style="margin:18px 0 24px;">
+                    <a class="button button-primary" href="<?php echo esc_url(admin_url('admin.php?page=constructor-hub-factory')); ?>">
+                        Crear página con IA
+                    </a>
+                    <a class="button" href="<?php echo esc_url(admin_url('admin.php?page=constructor-hub-import')); ?>">
+                        Importar ZIP
+                    </a>
+                </p>
+            <?php endif; ?>
+
             <h2>Diseños</h2>
             <table class="widefat striped" style="max-width:760px;">
                 <thead><tr><th>Tipo</th><th style="width:110px;">Diseños</th><th style="width:160px;"></th></tr></thead>
