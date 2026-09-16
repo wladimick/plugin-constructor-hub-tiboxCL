@@ -7,15 +7,8 @@ if (!defined('ABSPATH')) {
 /**
  * Editable content layer for HUB designs.
  *
- * Visual code remains immutable/versioned in HUB_Tibox_Version_Store. Content
- * values live in post meta, outside those versions, so a design can move from
- * v1 to v2 without forcing an editor to re-enter copy, links or images.
- *
- * A design can declare an optional `content_schema` in its package manifest and
- * use placeholders such as `{{CONTENT.hero.title}}` in HTML. For WordPress Pages
- * assigned to a HUB design, values are stored on the Page and therefore follow
- * the public content identity. Reusable/global designs fall back to values
- * stored on the hub_design itself.
+ * HTML/CSS/JS remains immutable and versioned. Editorial values live outside
+ * those versions so a visual redesign does not overwrite copy, links or media.
  */
 final class HUB_Tibox_Content
 {
@@ -50,10 +43,8 @@ final class HUB_Tibox_Content
     {
         add_action('add_meta_boxes_hub_design', [$this, 'add_design_meta_box']);
         add_action('add_meta_boxes_page', [$this, 'add_page_meta_box']);
-
         add_action('save_post_hub_design', [$this, 'save_design_content'], 30, 2);
         add_action('save_post_page', [$this, 'save_page_content'], 30, 2);
-
         add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_assets']);
     }
 
@@ -68,23 +59,7 @@ final class HUB_Tibox_Content
     /**
      * Validate and normalize a manifest content schema.
      *
-     * Shape:
-     *
-     * "content_schema": {
-     *   "hero.title": {
-     *     "type": "text",
-     *     "label": "Título principal",
-     *     "default": "...",
-     *     "required": true,
-     *     "group": "Hero",
-     *     "help": "..."
-     *   }
-     * }
-     *
-     * `select` additionally accepts an `options` object keyed by the stored
-     * value. `media` stores a WordPress attachment ID and renders its URL.
-     *
-     * @param array<string,mixed> $schema
+     * @param array<string,mixed> $schema Raw manifest schema.
      * @return array<string,array<string,mixed>>|WP_Error
      */
     public static function validate_schema(array $schema)
@@ -135,23 +110,20 @@ final class HUB_Tibox_Content
                 );
             }
 
-            $label = sanitize_text_field((string) ($definition['label'] ?? ''));
-            if ($label === '') {
-                $label = self::label_from_path($path);
-            }
-
             $field = [
                 'type' => $type,
-                'label' => $label,
+                'label' => sanitize_text_field((string) ($definition['label'] ?? '')),
                 'required' => !empty($definition['required']),
                 'group' => sanitize_text_field((string) ($definition['group'] ?? 'Contenido')),
                 'help' => sanitize_text_field((string) ($definition['help'] ?? '')),
             ];
 
-            if (array_key_exists('default', $definition)) {
-                $field['default'] = self::sanitize_value($definition['default'], $field);
+            if ($field['label'] === '') {
+                $field['label'] = self::label_from_path($path);
             }
 
+            // A select must know its options before its default is sanitized.
+            // Otherwise a valid default would be discarded as an unknown value.
             if ($type === 'select') {
                 $options = [];
                 foreach ((array) ($definition['options'] ?? []) as $value => $option_label) {
@@ -159,6 +131,7 @@ final class HUB_Tibox_Content
                     if ($value === '') {
                         continue;
                     }
+
                     $options[$value] = sanitize_text_field((string) $option_label);
                 }
 
@@ -170,10 +143,10 @@ final class HUB_Tibox_Content
                 }
 
                 $field['options'] = $options;
+            }
 
-                if (isset($field['default']) && !array_key_exists((string) $field['default'], $options)) {
-                    $field['default'] = '';
-                }
+            if (array_key_exists('default', $definition)) {
+                $field['default'] = self::sanitize_value($definition['default'], $field);
             }
 
             $normalized[$path] = $field;
@@ -188,10 +161,7 @@ final class HUB_Tibox_Content
     }
 
     /**
-     * References used in HTML, without the CONTENT. prefix.
-     *
-     * A media field also supports `.url`, `.alt` and `.id` suffixes, e.g.
-     * `{{CONTENT.hero.image.alt}}`.
+     * Return CONTENT references used in markup, without the CONTENT. prefix.
      *
      * @return string[]
      */
@@ -209,9 +179,9 @@ final class HUB_Tibox_Content
     }
 
     /**
-     * Content references used by HTML but absent from the declared schema.
+     * Return references used in markup but absent from the declared schema.
      *
-     * @param array<string,array<string,mixed>> $schema
+     * @param array<string,array<string,mixed>> $schema Normalized schema.
      * @return string[]
      */
     public static function unknown_references(string $content, array $schema): array
@@ -223,8 +193,7 @@ final class HUB_Tibox_Content
                 continue;
             }
 
-            $base = self::media_reference_base($reference, $schema);
-            if ($base !== '') {
+            if (self::media_reference_base($reference, $schema) !== '') {
                 continue;
             }
 
@@ -235,9 +204,9 @@ final class HUB_Tibox_Content
     }
 
     /**
-     * Decode a content schema from one stored version row.
+     * Decode a normalized content schema from one stored design version.
      *
-     * @param array<string,mixed>|null $version
+     * @param array<string,mixed>|null $version Version row.
      * @return array<string,array<string,mixed>>
      */
     public static function schema_from_version(?array $version): array
@@ -263,10 +232,9 @@ final class HUB_Tibox_Content
     // --------------------------------------------------------------- storage
 
     /**
-     * Add defaults declared by a package without overwriting existing content.
-     * This is deliberately separate from visual versioning.
+     * Seed defaults without overwriting content already edited in WordPress.
      *
-     * @param array<string,array<string,mixed>> $schema
+     * @param array<string,array<string,mixed>> $schema Normalized schema.
      */
     public static function seed_defaults(int $design_id, array $schema): void
     {
@@ -292,11 +260,9 @@ final class HUB_Tibox_Content
     }
 
     /**
-     * Effective values for one render host.
+     * Resolve values with precedence: default < design < Page/host override.
      *
-     * Precedence: schema default < design value < host/Page override.
-     *
-     * @param array<string,array<string,mixed>> $schema
+     * @param array<string,array<string,mixed>> $schema Normalized schema.
      * @return array<string,mixed>
      */
     public static function effective_values(int $host_id, int $design_id, array $schema): array
@@ -304,23 +270,19 @@ final class HUB_Tibox_Content
         $values = [];
 
         foreach ($schema as $path => $field) {
-            if (array_key_exists('default', $field)) {
-                $values[$path] = $field['default'];
-            } else {
-                $values[$path] = self::empty_value_for((string) ($field['type'] ?? 'text'));
-            }
+            $values[$path] = array_key_exists('default', $field)
+                ? $field['default']
+                : self::empty_value_for((string) ($field['type'] ?? 'text'));
         }
 
-        $design_values = self::stored_values($design_id, $design_id);
-        foreach ($design_values as $path => $value) {
+        foreach (self::stored_values($design_id, $design_id) as $path => $value) {
             if (isset($schema[$path])) {
                 $values[$path] = $value;
             }
         }
 
         if ($host_id > 0 && $host_id !== $design_id) {
-            $host_values = self::stored_values($host_id, $design_id);
-            foreach ($host_values as $path => $value) {
+            foreach (self::stored_values($host_id, $design_id) as $path => $value) {
                 if (isset($schema[$path])) {
                     $values[$path] = $value;
                 }
@@ -330,9 +292,7 @@ final class HUB_Tibox_Content
         return $values;
     }
 
-    /**
-     * @return array<string,mixed>
-     */
+    /** @return array<string,mixed> */
     private static function stored_values(int $host_id, int $design_id): array
     {
         if ($host_id <= 0 || $design_id <= 0) {
@@ -349,9 +309,7 @@ final class HUB_Tibox_Content
         return is_array($values) ? $values : [];
     }
 
-    /**
-     * @param array<string,mixed> $values
-     */
+    /** @param array<string,mixed> $values Values to store. */
     private static function store_values(int $host_id, int $design_id, array $values): void
     {
         if ($host_id <= 0 || $design_id <= 0) {
@@ -368,16 +326,12 @@ final class HUB_Tibox_Content
     // ---------------------------------------------------------------- render
 
     /**
-     * Replace `{{CONTENT.*}}` placeholders for one design/version.
+     * Replace CONTENT placeholders for one design/version.
      *
-     * @param array<string,mixed> $version
+     * @param array<string,mixed> $version Version row.
      */
-    public static function replace(
-        string $html,
-        int $design_id,
-        array $version,
-        int $host_id = 0
-    ): string {
+    public static function replace(string $html, int $design_id, array $version, int $host_id = 0): string
+    {
         if ($html === '' || !str_contains($html, '{{CONTENT.')) {
             return $html;
         }
@@ -408,17 +362,13 @@ final class HUB_Tibox_Content
 
             $field = $schema[$field_path];
             $value = $values[$field_path] ?? self::empty_value_for((string) ($field['type'] ?? 'text'));
-            $rendered = self::render_value($value, $field, $property);
-
-            $map['{{CONTENT.' . $reference . '}}'] = $rendered;
+            $map['{{CONTENT.' . $reference . '}}'] = self::render_value($value, $field, $property);
         }
 
         if ($map === []) {
             return $html;
         }
 
-        // Preserve support for whitespace inside braces by replacing through a
-        // callback after the fast canonical strtr pass.
         $html = strtr($html, $map);
 
         return preg_replace_callback(
@@ -432,8 +382,10 @@ final class HUB_Tibox_Content
     }
 
     /**
-     * @param mixed               $value
-     * @param array<string,mixed> $field
+     * Escape one value according to its declared field type.
+     *
+     * @param mixed               $value Raw stored value.
+     * @param array<string,mixed> $field Normalized field definition.
      */
     private static function render_value($value, array $field, string $property = ''): string
     {
@@ -450,7 +402,7 @@ final class HUB_Tibox_Content
             }
 
             if ($property === 'alt') {
-                return esc_html((string) get_post_meta($attachment_id, '_wp_attachment_image_alt', true));
+                return esc_attr((string) get_post_meta($attachment_id, '_wp_attachment_image_alt', true));
             }
 
             return esc_url((string) wp_get_attachment_image_url($attachment_id, 'full'));
@@ -496,12 +448,7 @@ final class HUB_Tibox_Content
         }
 
         $design_id = HUB_Tibox_Page_Assignment::instance()->assigned_design_id($post->ID);
-        if ($design_id <= 0) {
-            return;
-        }
-
-        $schema = self::admin_schema($design_id);
-        if ($schema === []) {
+        if ($design_id <= 0 || self::admin_schema($design_id) === []) {
             return;
         }
 
@@ -518,7 +465,6 @@ final class HUB_Tibox_Content
     public function render_design_meta_box(WP_Post $post): void
     {
         $schema = self::admin_schema($post->ID);
-
         if ($schema === []) {
             echo '<p>Este diseño no declara <code>content_schema</code>. El HTML/CSS/JS sigue siendo versionable, pero no hay campos editoriales separados.</p>';
             return;
@@ -540,26 +486,27 @@ final class HUB_Tibox_Content
         $this->render_editor($post->ID, $design_id, $schema, true);
     }
 
-    /**
-     * @param array<string,array<string,mixed>> $schema
-     */
+    /** @param array<string,array<string,mixed>> $schema Normalized schema. */
     private function render_editor(int $host_id, int $design_id, array $schema, bool $page_override): void
     {
         wp_nonce_field(self::NONCE_ACTION, self::NONCE_FIELD);
         printf(
-            '<input type="hidden" name="hub_content_design_id" value="%d">',
-            $design_id
+            '<input type="hidden" name="hub_content_design_id" value="%s">',
+            esc_attr((string) $design_id)
         );
 
         $values = self::effective_values($host_id, $design_id, $schema);
         $group = null;
 
         echo '<div class="hub-content-editor">';
-        echo '<p class="description">';
-        echo $page_override
-            ? 'Estos valores pertenecen a esta Page de WordPress. Cambiar o publicar una nueva versión visual del diseño no los reemplaza.'
-            : 'Estos valores son el contenido base del diseño y permanecen separados de las versiones HTML/CSS/JS.';
-        echo '</p>';
+        printf(
+            '<p class="description">%s</p>',
+            esc_html(
+                $page_override
+                    ? 'Estos valores pertenecen a esta Page de WordPress. Cambiar o publicar una nueva versión visual del diseño no los reemplaza.'
+                    : 'Estos valores son el contenido base del diseño y permanecen separados de las versiones HTML/CSS/JS.'
+            )
+        );
 
         foreach ($schema as $path => $field) {
             $next_group = (string) ($field['group'] ?? 'Contenido');
@@ -576,8 +523,10 @@ final class HUB_Tibox_Content
     }
 
     /**
-     * @param array<string,mixed> $field
-     * @param mixed               $value
+     * Render one content field in the WordPress editor.
+     *
+     * @param array<string,mixed> $field Normalized field definition.
+     * @param mixed               $value Current value.
      */
     private function render_field(string $path, array $field, $value): void
     {
@@ -627,10 +576,17 @@ final class HUB_Tibox_Content
                 checked(!empty($value), true, false)
             );
         } elseif ($type === 'select') {
-            printf('<select id="%s" name="%s"%s>', esc_attr($id), esc_attr($name), $required ? ' required' : '');
+            printf(
+                '<select id="%s" name="%s"%s>',
+                esc_attr($id),
+                esc_attr($name),
+                $required ? ' required' : ''
+            );
+
             if (!$required) {
                 echo '<option value="">— Seleccionar —</option>';
             }
+
             foreach ((array) ($field['options'] ?? []) as $option_value => $option_label) {
                 printf(
                     '<option value="%s" %s>%s</option>',
@@ -641,24 +597,7 @@ final class HUB_Tibox_Content
             }
             echo '</select>';
         } elseif ($type === 'media') {
-            $attachment_id = absint($value);
-            $preview = $attachment_id > 0 ? (string) wp_get_attachment_image_url($attachment_id, 'medium') : '';
-
-            printf(
-                '<div class="hub-content-media" data-hub-media-field>'
-                . '<input id="%s" type="hidden" name="%s" value="%d" data-hub-media-input>'
-                . '<div data-hub-media-preview style="margin:0 0 8px;">%s</div>'
-                . '<button type="button" class="button" data-hub-media-select>Seleccionar imagen</button> '
-                . '<button type="button" class="button-link-delete" data-hub-media-remove%s>Quitar</button>'
-                . '</div>',
-                esc_attr($id),
-                esc_attr($name),
-                $attachment_id,
-                $preview !== ''
-                    ? '<img src="' . esc_url($preview) . '" alt="" style="display:block;max-width:220px;height:auto;border-radius:6px;">'
-                    : '',
-                $attachment_id > 0 ? '' : ' hidden'
-            );
+            $this->render_media_field($id, $name, absint($value));
         } else {
             printf(
                 '<input id="%s" name="%s" type="text" class="widefat" value="%s"%s>',
@@ -680,7 +619,33 @@ final class HUB_Tibox_Content
             '<code style="display:inline-block;margin-top:6px;font-size:11px;">{{CONTENT.%s}}</code>',
             esc_html($path)
         );
+        echo '</div>';
+    }
 
+    private function render_media_field(string $id, string $name, int $attachment_id): void
+    {
+        $preview = $attachment_id > 0 ? (string) wp_get_attachment_image_url($attachment_id, 'medium') : '';
+
+        echo '<div class="hub-content-media" data-hub-media-field>';
+        printf(
+            '<input id="%s" type="hidden" name="%s" value="%s" data-hub-media-input>',
+            esc_attr($id),
+            esc_attr($name),
+            esc_attr((string) $attachment_id)
+        );
+        echo '<div data-hub-media-preview style="margin:0 0 8px;">';
+        if ($preview !== '') {
+            printf(
+                '<img src="%s" alt="" style="display:block;max-width:220px;height:auto;border-radius:6px;">',
+                esc_url($preview)
+            );
+        }
+        echo '</div>';
+        echo '<button type="button" class="button" data-hub-media-select>Seleccionar imagen</button> ';
+        printf(
+            '<button type="button" class="button-link-delete" data-hub-media-remove%s>Quitar</button>',
+            $attachment_id > 0 ? '' : ' hidden'
+        );
         echo '</div>';
     }
 
@@ -720,6 +685,10 @@ final class HUB_Tibox_Content
             return;
         }
 
+        if (!$this->request_has_valid_nonce()) {
+            return;
+        }
+
         $design_id = HUB_Tibox_Page_Assignment::instance()->assigned_design_id($post_id);
         $posted_design = isset($_POST['hub_content_design_id'])
             ? absint($_POST['hub_content_design_id'])
@@ -729,17 +698,13 @@ final class HUB_Tibox_Content
             return;
         }
 
-        $this->save_content($post_id, $design_id, $post);
+        $this->save_content($post_id, $design_id, $post, true);
     }
 
-    private function save_content(int $host_id, int $design_id, WP_Post $post): void
+    private function save_content(int $host_id, int $design_id, WP_Post $post, bool $nonce_checked = false): void
     {
         if (
-            !isset($_POST[self::NONCE_FIELD])
-            || !wp_verify_nonce(
-                sanitize_text_field(wp_unslash((string) $_POST[self::NONCE_FIELD])),
-                self::NONCE_ACTION
-            )
+            (!$nonce_checked && !$this->request_has_valid_nonce())
             || (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE)
             || wp_is_post_revision($post->ID)
             || !current_user_can('edit_post', $post->ID)
@@ -752,17 +717,18 @@ final class HUB_Tibox_Content
             return;
         }
 
+        // Every field is sanitized below according to its schema type. WPCS
+        // cannot infer that recursive field-level sanitization from this read.
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
         $posted = isset($_POST['hub_content_values']) && is_array($_POST['hub_content_values'])
             ? wp_unslash($_POST['hub_content_values'])
             : [];
 
         $values = [];
         foreach ($schema as $path => $field) {
-            if ((string) ($field['type'] ?? '') === 'boolean') {
-                $raw = isset($posted[$path]) ? $posted[$path] : '0';
-            } else {
-                $raw = array_key_exists($path, $posted) ? $posted[$path] : '';
-            }
+            $raw = (string) ($field['type'] ?? '') === 'boolean'
+                ? ($posted[$path] ?? '0')
+                : (array_key_exists($path, $posted) ? $posted[$path] : '');
 
             $values[$path] = self::sanitize_value($raw, $field);
         }
@@ -770,9 +736,18 @@ final class HUB_Tibox_Content
         self::store_values($host_id, $design_id, $values);
     }
 
-    /**
-     * @return array<string,array<string,mixed>>
-     */
+    private function request_has_valid_nonce(): bool
+    {
+        if (!isset($_POST[self::NONCE_FIELD])) {
+            return false;
+        }
+
+        $nonce = sanitize_text_field(wp_unslash((string) $_POST[self::NONCE_FIELD]));
+
+        return (bool) wp_verify_nonce($nonce, self::NONCE_ACTION);
+    }
+
+    /** @return array<string,array<string,mixed>> */
     private static function admin_schema(int $design_id): array
     {
         if ($design_id <= 0) {
@@ -788,8 +763,10 @@ final class HUB_Tibox_Content
     // -------------------------------------------------------------- helpers
 
     /**
-     * @param mixed               $value
-     * @param array<string,mixed> $field
+     * Sanitize one value according to its declared field type.
+     *
+     * @param mixed               $value Raw value.
+     * @param array<string,mixed> $field Normalized field definition.
      * @return mixed
      */
     private static function sanitize_value($value, array $field)
@@ -818,26 +795,26 @@ final class HUB_Tibox_Content
 
         if ($type === 'select') {
             $value = sanitize_key((string) $value);
-            $options = (array) ($field['options'] ?? []);
-            return array_key_exists($value, $options) ? $value : '';
+            return array_key_exists($value, (array) ($field['options'] ?? [])) ? $value : '';
         }
 
         return sanitize_text_field((string) $value);
     }
 
+    /** @return int|string */
     private static function empty_value_for(string $type)
     {
         if ($type === 'media') {
             return 0;
         }
-        if ($type === 'boolean') {
-            return '0';
-        }
-        return '';
+
+        return $type === 'boolean' ? '0' : '';
     }
 
     /**
-     * @param array<string,array<string,mixed>> $schema
+     * Resolve a media field base path from `.url`, `.alt` or `.id` reference.
+     *
+     * @param array<string,array<string,mixed>> $schema Normalized schema.
      */
     private static function media_reference_base(string $reference, array $schema): string
     {
