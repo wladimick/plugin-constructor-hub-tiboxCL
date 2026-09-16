@@ -133,6 +133,7 @@ final class HUB_Tibox_Plugin
             HUB_Tibox_Admin_Menu::instance();
             HUB_Tibox_Design_Admin::instance();
             HUB_Tibox_Settings_Page::instance();
+            HUB_Tibox_Site_Factory::instance();
         }
     }
 
