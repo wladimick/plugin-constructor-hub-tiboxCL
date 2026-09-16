@@ -162,11 +162,31 @@ final class HUB_Tibox_Variables
         ) {
             $version = HUB_Tibox_Preview::version_for($design_id);
             if ($version !== null) {
+                $content_host = (int) ($context['content_host'] ?? 0);
+
+                // A WordPress Page assigned to HUB remains the content identity.
+                // Header/Footer/components still use their own design values,
+                // because only a matching page assignment may become the host.
+                if (
+                    $content_host <= 0
+                    && class_exists('HUB_Tibox_Page_Assignment')
+                    && function_exists('is_singular')
+                    && is_singular('page')
+                ) {
+                    $page_id = get_queried_object_id();
+                    if (
+                        $page_id > 0
+                        && HUB_Tibox_Page_Assignment::instance()->assigned_design_id($page_id) === $design_id
+                    ) {
+                        $content_host = $page_id;
+                    }
+                }
+
                 $content = HUB_Tibox_Content::replace(
                     $content,
                     $design_id,
                     $version,
-                    (int) ($context['content_host'] ?? 0)
+                    $content_host
                 );
             }
         }
