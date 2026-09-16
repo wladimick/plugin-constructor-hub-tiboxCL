@@ -354,6 +354,8 @@ final class HUB_Tibox_Site_Factory
     /** @return array{path:string,name:string}|WP_Error */
     private function receive_zip()
     {
+        // The admin-post handler verified the factory nonce before calling this helper.
+        // phpcs:disable WordPress.Security.NonceVerification.Missing
         if (
             !isset($_FILES['hub_factory_package'])
             || !is_array($_FILES['hub_factory_package'])
@@ -368,6 +370,7 @@ final class HUB_Tibox_Site_Factory
         // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- wp_handle_upload() validates the upload payload.
         $file = $_FILES['hub_factory_package'];
         $original = sanitize_file_name(wp_unslash((string) ($file['name'] ?? 'package.zip')));
+        // phpcs:enable WordPress.Security.NonceVerification.Missing
 
         $uploaded = wp_handle_upload($file, [
             'test_form' => false,
@@ -395,9 +398,12 @@ final class HUB_Tibox_Site_Factory
     /** @return int|WP_Error */
     private function existing_page_from_request()
     {
+        // The admin-post handler verified the factory nonce before calling this helper.
+        // phpcs:disable WordPress.Security.NonceVerification.Missing
         $page_id = isset($_POST['hub_factory_existing_page_id'])
             ? absint($_POST['hub_factory_existing_page_id'])
             : 0;
+        // phpcs:enable WordPress.Security.NonceVerification.Missing
 
         if ($page_id <= 0 || get_post_type($page_id) !== 'page') {
             return new WP_Error('hub_factory_page', 'Selecciona una Page de WordPress válida.');
@@ -417,12 +423,15 @@ final class HUB_Tibox_Site_Factory
             return new WP_Error('hub_factory_create_page', 'Tu usuario no tiene permiso para crear Pages.');
         }
 
+        // The admin-post handler verified the factory nonce before calling this helper.
+        // phpcs:disable WordPress.Security.NonceVerification.Missing
         $title = isset($_POST['hub_factory_page_title'])
             ? sanitize_text_field(wp_unslash((string) $_POST['hub_factory_page_title']))
             : '';
         $slug = isset($_POST['hub_factory_page_slug'])
             ? sanitize_title(wp_unslash((string) $_POST['hub_factory_page_slug']))
             : '';
+        // phpcs:enable WordPress.Security.NonceVerification.Missing
 
         if ($title === '') {
             return new WP_Error('hub_factory_title', 'Escribe un título para la nueva Page.');
