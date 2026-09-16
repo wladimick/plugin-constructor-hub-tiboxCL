@@ -690,9 +690,14 @@ final class HUB_Tibox_Content
         }
 
         $design_id = HUB_Tibox_Page_Assignment::instance()->assigned_design_id($post_id);
+
+        // Nonce verification is performed immediately above through the shared
+        // helper. The sniff cannot follow verification across method calls.
+        // phpcs:disable WordPress.Security.NonceVerification.Missing
         $posted_design = isset($_POST['hub_content_design_id'])
             ? absint($_POST['hub_content_design_id'])
             : 0;
+        // phpcs:enable WordPress.Security.NonceVerification.Missing
 
         if ($design_id <= 0 || $posted_design !== $design_id) {
             return;
@@ -717,12 +722,13 @@ final class HUB_Tibox_Content
             return;
         }
 
-        // Every field is sanitized below according to its schema type. WPCS
-        // cannot infer that recursive field-level sanitization from this read.
-        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+        // The nonce was verified in this method or by save_page_content(). Each
+        // value is sanitized below according to the declared schema field type.
+        // phpcs:disable WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
         $posted = isset($_POST['hub_content_values']) && is_array($_POST['hub_content_values'])
             ? wp_unslash($_POST['hub_content_values'])
             : [];
+        // phpcs:enable WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 
         $values = [];
         foreach ($schema as $path => $field) {
