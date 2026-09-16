@@ -140,12 +140,34 @@ final class HUB_Tibox_Version_Store
 
     /**
      * Make one version the published one. Returns false when it does not belong
-     * to the design.
+     * to the design or a registered publish guard blocks it.
      */
     public function publish(int $design_id, int $version_id): bool
     {
         $version = $this->get($version_id);
         if ($version === null || (int) $version['design_id'] !== $design_id) {
+            return false;
+        }
+
+        /**
+         * Central publication gate. Guards should only return false for
+         * structural blockers, not subjective quality warnings, because this
+         * path is also used by rollback and controlled migration code.
+         *
+         * @param bool                $allowed    Existing decision.
+         * @param int                 $design_id  HUB design id.
+         * @param int                 $version_id Version being published.
+         * @param array<string,mixed> $version    Stored immutable version row.
+         */
+        $allowed = (bool) apply_filters(
+            'constructor_hub_publish_allowed',
+            true,
+            $design_id,
+            $version_id,
+            $version
+        );
+
+        if (!$allowed) {
             return false;
         }
 
