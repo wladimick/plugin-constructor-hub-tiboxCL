@@ -151,6 +151,46 @@ final class HUB_Tibox_Variables
             return $content;
         }
 
+        // Editable content is deliberately resolved before the fixed variable
+        // registry. CONTENT.* is dynamic per design, so it does not belong in
+        // the global registry of SITE_/PAGE_/MENU_ variables.
+        if (
+            $design_id > 0
+            && str_contains($content, '{{CONTENT.')
+            && class_exists('HUB_Tibox_Content')
+            && class_exists('HUB_Tibox_Preview')
+        ) {
+            $version = HUB_Tibox_Preview::version_for($design_id);
+            if ($version !== null) {
+                $content_host = (int) ($context['content_host'] ?? 0);
+
+                // A WordPress Page assigned to HUB remains the content identity.
+                // Header/Footer/components still use their own design values,
+                // because only a matching page assignment may become the host.
+                if (
+                    $content_host <= 0
+                    && class_exists('HUB_Tibox_Page_Assignment')
+                    && function_exists('is_singular')
+                    && is_singular('page')
+                ) {
+                    $page_id = get_queried_object_id();
+                    if (
+                        $page_id > 0
+                        && HUB_Tibox_Page_Assignment::instance()->assigned_design_id($page_id) === $design_id
+                    ) {
+                        $content_host = $page_id;
+                    }
+                }
+
+                $content = HUB_Tibox_Content::replace(
+                    $content,
+                    $design_id,
+                    $version,
+                    $content_host
+                );
+            }
+        }
+
         $used = self::used_in($content);
         if ($used === []) {
             return $content;

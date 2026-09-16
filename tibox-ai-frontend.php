@@ -36,6 +36,7 @@ require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-css-scoper.php';
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-variables.php';
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-version-store.php';
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-design.php';
+require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-content.php';
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-preview.php';
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-asset-compiler.php';
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-regions.php';
