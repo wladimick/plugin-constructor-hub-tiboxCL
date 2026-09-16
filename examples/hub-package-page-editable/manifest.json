@@ -1,0 +1,61 @@
+{
+  "hub_package": 1,
+  "type": "page",
+  "name": "Página HUB editable",
+  "slug": "pagina-hub-editable",
+  "version": "1.0.0",
+  "site": "generic",
+  "entry": "index.html",
+  "scope": "hub-scope-page-editable",
+  "mode": "hub",
+  "description": "Ejemplo mínimo de una página IA con contenido editable desde WordPress.",
+  "variables": [
+    "SITE_NAME"
+  ],
+  "tokens": [
+    "--hub-primary",
+    "--hub-accent",
+    "--hub-container",
+    "--hub-background",
+    "--hub-text"
+  ],
+  "content_schema": {
+    "hero.eyebrow": {
+      "type": "text",
+      "label": "Eyebrow",
+      "default": "SERVICIOS DIGITALES",
+      "group": "Hero"
+    },
+    "hero.title": {
+      "type": "text",
+      "label": "Título principal",
+      "default": "Una página rápida que sigue siendo fácil de actualizar.",
+      "required": true,
+      "group": "Hero"
+    },
+    "hero.description": {
+      "type": "textarea",
+      "label": "Descripción",
+      "default": "La IA define la presentación. WordPress conserva el contenido.",
+      "group": "Hero"
+    },
+    "hero.cta_label": {
+      "type": "text",
+      "label": "Texto del botón",
+      "default": "Conversemos",
+      "group": "Hero"
+    },
+    "hero.cta_url": {
+      "type": "url",
+      "label": "URL del botón",
+      "default": "/contacto/",
+      "group": "Hero"
+    },
+    "hero.image": {
+      "type": "media",
+      "label": "Fotografía",
+      "group": "Hero",
+      "help": "Selecciona una imagen desde la Biblioteca de Medios."
+    }
+  }
+}
