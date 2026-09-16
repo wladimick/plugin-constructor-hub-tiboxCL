@@ -37,6 +37,12 @@ Hub_Test::assert_same(
 );
 
 Hub_Test::assert_same(
+    'content schema: valid select default is preserved',
+    'dark',
+    is_array($schema) ? $schema['hero.variant']['default'] : null
+);
+
+Hub_Test::assert_same(
     'content schema: references are extracted once',
     ['hero.title', 'hero.image.url', 'hero.image.alt'],
     HUB_Tibox_Content::references_in(
