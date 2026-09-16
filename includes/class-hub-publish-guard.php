@@ -233,7 +233,7 @@ final class HUB_Tibox_Publish_Guard
         $img_count = $img_count === false ? 0 : $img_count;
         $missing_alt = 0;
 
-        foreach ((array) ($image_matches[0] ?? []) as $tag) {
+        foreach ($image_matches[0] as $tag) {
             if (!preg_match('/\balt\s*=\s*(["\']).*?\1/i', (string) $tag)) {
                 ++$missing_alt;
             }
