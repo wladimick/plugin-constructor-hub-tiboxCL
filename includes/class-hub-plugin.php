@@ -136,6 +136,7 @@ final class HUB_Tibox_Plugin
             HUB_Tibox_Site_Factory::instance();
             HUB_Tibox_Redesign_Workflow::instance();
             HUB_Tibox_Page_Registry::instance();
+            HUB_Tibox_Package_Upload_Guard::instance();
         }
     }
 
