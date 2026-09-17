@@ -60,7 +60,9 @@ require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-admin-menu.php';
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-design-admin.php';
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-settings-page.php';
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-site-factory.php';
+require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-redesign-workflow.php';
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-page-registry.php';
+require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-package-upload-guard.php';
 
 // Forms, leads and mail.
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-antispam.php';
