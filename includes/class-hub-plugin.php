@@ -55,10 +55,15 @@ final class HUB_Tibox_Plugin
         HUB_Tibox_Landing_Zip_Importer::instance();
         HUB_Tibox_Legacy_Migrator::instance();
 
+        // Updating must remain available even on a site that is still using the
+        // historical boot path. Otherwise a site could get stuck on an older
+        // migration state precisely when a newer release contains the fix.
+        HUB_Tibox_Release_Updater::instance();
+
         // Diagnostics and the migration retry/rollback controls must stay
-        // reachable in both boot paths: a partial migration or an explicit
-        // rollback both leave the site in the historical layout, and that is
-        // exactly when an administrator needs this screen most.
+        // reachable in both boot paths: a partial migration or a rollback both
+        // leave the site un-unified, and that is exactly when an administrator
+        // most needs this screen.
         HUB_Tibox_Site_Config::instance();
 
         if (self::needs_deferred_boot()) {
