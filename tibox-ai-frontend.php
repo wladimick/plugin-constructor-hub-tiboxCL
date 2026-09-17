@@ -3,9 +3,10 @@
  * Plugin Name: Constructor HUB Tibox
  * Plugin URI: https://github.com/wladimick/plugin-constructor-hub-tiboxCL
  * Description: Constructor frontend progresivo para WordPress. Permite reemplazar Header, Footer, bloques, landings y páginas por HTML/CSS/JS propio, manteniendo WordPress como backend y compatibilidad con sitios existentes basados en Elementor.
- * Version: 0.5.0-dev
+ * Version: 0.6.0-dev
  * Requires PHP: 8.0
  * Requires at least: 6.2
+ * Update URI: https://github.com/wladimick/plugin-constructor-hub-tiboxCL
  * Author: Tibox
  * Text Domain: constructor-hub-tibox
  * Domain Path: /languages
@@ -24,7 +25,7 @@ if (!defined('ABSPATH')) {
  * duplicadas. La identidad pública del producto desde v0.2.0 es
  * Constructor HUB Tibox.
  */
-define('TIBOX_AI_FRONTEND_VERSION', '0.5.0-dev');
+define('TIBOX_AI_FRONTEND_VERSION', '0.6.0-dev');
 define('TIBOX_AI_FRONTEND_FILE', __FILE__);
 define('TIBOX_AI_FRONTEND_DIR', plugin_dir_path(__FILE__));
 define('TIBOX_AI_FRONTEND_URL', plugin_dir_url(__FILE__));
@@ -51,6 +52,7 @@ require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-design-system.php';
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-form-config.php';
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-legacy-types.php';
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-upgrade.php';
+require_once TIBOX_AI_FRONTEND_DIR . 'includes/class-hub-release-updater.php';
 
 // Adapters.
 require_once TIBOX_AI_FRONTEND_DIR . 'includes/adapters/class-hub-elementor-adapter.php';
