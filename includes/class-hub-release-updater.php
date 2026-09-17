@@ -19,8 +19,8 @@ final class HUB_Tibox_Release_Updater
     private const API_LATEST = 'https://api.github.com/repos/wladimick/plugin-constructor-hub-tiboxCL/releases/latest';
     private const RELEASES_URL = 'https://github.com/wladimick/plugin-constructor-hub-tiboxCL/releases';
     private const CACHE_KEY = 'hub_tibox_latest_release';
-    private const CACHE_SECONDS = 6 * HOUR_IN_SECONDS;
-    private const FAILURE_CACHE_SECONDS = HOUR_IN_SECONDS;
+    private const CACHE_SECONDS = 21600; // 6 hours.
+    private const FAILURE_CACHE_SECONDS = 3600; // 1 hour.
 
     private static ?self $instance = null;
 
@@ -39,9 +39,7 @@ final class HUB_Tibox_Release_Updater
         add_filter('plugin_row_meta', [$this, 'row_meta'], 10, 2);
     }
 
-    /**
-     * Normalize release tags such as v0.6.0 to WordPress/PHP version strings.
-     */
+    /** Normalize release tags such as v0.6.0 to WordPress version strings. */
     public static function normalize_version(string $tag): string
     {
         $tag = trim($tag);
@@ -107,7 +105,7 @@ final class HUB_Tibox_Release_Updater
             return false;
         }
 
-        $parts = wp_parse_url($url);
+        $parts = parse_url($url);
         if (!is_array($parts)) {
             return false;
         }
